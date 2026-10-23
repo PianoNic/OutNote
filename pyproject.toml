@@ -51,6 +51,9 @@ dependencies = [
     "ms-entrance>=1.2",
 ]
 
+[project.optional-dependencies]
+pdf = ["pypdf>=4"]
+
 [project.urls]
 Homepage = "https://github.com/PianoNic/OutNote"
 Issues = "https://github.com/PianoNic/OutNote/issues"

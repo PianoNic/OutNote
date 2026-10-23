@@ -3,9 +3,58 @@ No network."""
 
 import base64
 import hashlib
+import io
+import json
+import zipfile
+from types import SimpleNamespace
+
+import pytest
 
 import outnote
 from outnote import _auth, _graph
+
+
+class _Resp:
+    def __init__(self, body):
+        self.body = body
+
+    def read(self):
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+@pytest.fixture
+def graph(monkeypatch):
+    """Fake Graph: `graph.add(method, url_fragment, reply)`; the longest
+    matching fragment wins. Sent requests land in `graph.sent`."""
+    routes = []
+    sent = []
+
+    def fake(req, timeout=None):
+        sent.append(req)
+        hits = [r for r in routes if r[0] == req.get_method() and r[1] in req.full_url]
+        if not hits:
+            raise AssertionError(f"unexpected {req.get_method()} {req.full_url}")
+        reply = max(hits, key=lambda r: len(r[1]))[2]
+        if isinstance(reply, Exception):
+            raise reply
+        if reply is None:
+            return _Resp(b"")
+        return _Resp(reply if isinstance(reply, bytes) else json.dumps(reply).encode())
+
+    monkeypatch.setattr(_graph, "urlopen", fake)
+    note = outnote.OutNote("tok")
+    return SimpleNamespace(
+        note=note,
+        sent=sent,
+        add=lambda m, frag, reply: routes.append((m, frag, reply)),
+        body=lambda i=-1: json.loads(sent[i].data) if sent[i].data else None,
+    )
 
 
 def test_public_surface():
@@ -170,3 +219,84 @@ def test_from_refresh_token(monkeypatch):
     _fake_token_endpoint(monkeypatch, [{"access_token": "a"}])
     note = outnote.OutNote.from_refresh_token("frt", read_only=True)
     assert note.read_only and note._tp(_graph.C_OFFICE) == "a"
+
+
+def test_empty_reply_is_none_and_empty_post_has_length(graph):
+    graph.add("POST", "/me/sendMail", None)
+    assert graph.note.post("me/sendMail") is None
+    assert graph.sent[-1].data == b""
+
+
+def test_download_attachment_variants(graph, tmp_path):
+    base = "/me/messages/m1/attachments/"
+    graph.add(
+        "GET",
+        base + "a1",
+        {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": "k.txt",
+            "contentBytes": base64.b64encode(b"hello").decode(),
+        },
+    )
+    graph.add("GET", base + "a2", {"@odata.type": "#microsoft.graph.itemAttachment", "name": "fw"})
+    graph.add("GET", base + "a2/$value", b"MIME")
+    graph.add("GET", base + "a3", {"@odata.type": "#microsoft.graph.referenceAttachment"})
+    n = graph.note
+    assert n.download_attachment("m1", "a1") == b"hello"
+    assert n.download_attachment("m1", "a1", dest=str(tmp_path)) == str(tmp_path / "k.txt")
+    assert (tmp_path / "k.txt").read_bytes() == b"hello"
+    assert n.download_attachment("m1", "a2") == b"MIME"
+    with pytest.raises(ValueError):
+        n.download_attachment("m1", "a3")
+
+
+def test_download_fetches_without_bearer(graph):
+    graph.add(
+        "GET",
+        "/me/drive/items/i1",
+        {"name": "x.bin", "@microsoft.graph.downloadUrl": "https://dl.example/x?sig=1"},
+    )
+    graph.add("GET", "https://dl.example/x", b"\x00\x01")
+    assert graph.note.download("i1") == b"\x00\x01"
+    assert "Authorization" not in graph.sent[-1].headers
+    assert graph.sent[0].headers["Authorization"] == "Bearer tok"
+
+
+def _zip(files):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, text in files.items():
+            z.writestr(name, text)
+    return buf.getvalue()
+
+
+def test_extract_text():
+    docx = _zip(
+        {
+            "word/document.xml": "<w:document><w:body>"
+            "<w:p><w:r><w:t>Lernziele</w:t></w:r></w:p>"
+            "<w:p><w:r><w:t>A &amp; B</w:t><w:tab/><w:t>C</w:t></w:r></w:p>"
+            "</w:body></w:document>"
+        }
+    )
+    assert outnote.extract_text("x.docx", docx) == "Lernziele\nA & B\tC"
+    pptx = _zip(
+        {
+            "ppt/slides/slide10.xml": "<a:p><a:t>ten</a:t></a:p>",
+            "ppt/slides/slide2.xml": "<a:p><a:t>two</a:t></a:p>",
+        }
+    )
+    assert outnote.extract_text("deck.PPTX", pptx) == "two\n\nten"
+    assert outnote.extract_text("n.md", "\ufeff# hi".encode()) == "# hi"
+    assert outnote.extract_text("img.png", b"\x89PNG") == ""
+    assert outnote.extract_text("broken.docx", b"not a zip") == ""
+
+
+def test_html_to_text():
+    teams = (
+        '<p>Hi <at id="0">Anna</at>, see <attachment id="1"></attachment>'
+        '<emoji alt="👍"><img src="x"></emoji></p><ul><li>one</li><li>two</li></ul>'
+    )
+    assert outnote.html_to_text(teams) == "Hi Anna, see 👍\n\n- one\n- two"
+    page = "<html><head><title>Mathe</title></head><body><h2>Ziele</h2><p><b>Bruch</b>rechnen</p>"
+    assert outnote.html_to_text(page, markdown=True) == "# Mathe\n\n## Ziele\n\n**Bruch**rechnen"

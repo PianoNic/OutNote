@@ -6,7 +6,9 @@ the scope it needs (see `authenticate` / the README token map). Graph is just
 GET + Bearer + JSON, so this leans on stdlib urllib.
 """
 
+import base64
 import json
+import os
 import re
 import time
 from urllib.error import HTTPError
@@ -38,6 +40,21 @@ _SEARCH_CLIENT = {
     "site": C_SITES,
     "listItem": C_SITES,
 }
+
+
+def _retry_after(header, attempt):
+    return float(header) if header and header.replace(".", "", 1).isdigit() else 2**attempt
+
+
+def _save(data, dest, name):
+    """Return `data`, or write it to `dest` (a file, or a directory to put
+    `name` in) and return the written path."""
+    if dest is None:
+        return data
+    path = os.path.join(dest, name) if os.path.isdir(dest) else dest
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
 
 
 class GraphError(RuntimeError):
@@ -85,12 +102,16 @@ class OutNote:
             try:
                 with urlopen(req, timeout=_TIMEOUT) as r:  # noqa: S310 - fixed https host
                     body = r.read()
-                return body.decode("utf-8") if raw else json.loads(body)
+                if raw == "bytes":
+                    return body
+                if raw:
+                    return body.decode("utf-8")
+                # 202/204 (sendMail, PATCH, DELETE, ...) come back empty
+                return json.loads(body) if body.strip() else None
             except HTTPError as e:
                 # Graph throttles with 429 (and 503); back off and retry.
                 if e.code in (429, 503) and attempt < _RETRIES:
-                    ra = e.headers.get("Retry-After")
-                    time.sleep(float(ra) if ra and ra.replace(".", "", 1).isdigit() else 2**attempt)
+                    time.sleep(_retry_after(e.headers.get("Retry-After"), attempt))
                     continue
                 detail = e.read().decode("utf-8", "replace")
                 try:
@@ -99,27 +120,62 @@ class OutNote:
                     pass
                 raise GraphError(e.code, detail) from None
 
-    def get(self, path, params=None, raw=False, client=C_OFFICE):
-        """One GET against `client`'s token. `raw=True` returns body text
-        (OneNote page content is HTML, not JSON)."""
-        req = Request(
-            self._url(path, params),
-            headers={"Authorization": f"Bearer {self._tp(client)}", "Accept": "application/json"},
-        )
+    def request(
+        self,
+        method,
+        path,
+        body=None,
+        *,
+        params=None,
+        raw=False,
+        client=C_OFFICE,
+        data=None,
+        content_type="application/json",
+        headers=None,
+        auth=True,
+    ):
+        """One Graph request. `body` is sent as JSON; or pass raw `data` bytes
+        with their `content_type`. Returns parsed JSON (None for an empty
+        202/204 reply); `raw=True` returns text, `raw="bytes"` bytes.
+        `auth=False` skips the bearer token (pre-authed download/upload URLs)."""
+        if body is not None:
+            data = json.dumps(body).encode()
+        if data is None and method in ("POST", "PUT", "PATCH"):
+            data = b""  # Graph wants a Content-Length even on empty POSTs
+        h = {"Accept": "application/json", **(headers or {})}
+        if auth:
+            h["Authorization"] = f"Bearer {self._tp(client)}"
+        if data is not None:
+            h.setdefault("Content-Type", content_type)
+        req = Request(self._url(path, params), data=data, headers=h, method=method)
         return self._send(req, raw)
 
-    def post(self, path, body, client=C_OFFICE):
+    def get(self, path, params=None, raw=False, client=C_OFFICE):
+        """One GET against `client`'s token. `raw=True` returns body text
+        (OneNote page content is HTML, not JSON), `raw="bytes"` the bytes."""
+        return self.request("GET", path, params=params, raw=raw, client=client)
+
+    def post(self, path, body=None, client=C_OFFICE, **kw):
         """One POST of a JSON body against `client`'s token."""
-        req = Request(
-            self._url(path),
-            data=json.dumps(body).encode(),
-            headers={
-                "Authorization": f"Bearer {self._tp(client)}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-        )
-        return self._send(req)
+        return self.request("POST", path, body, client=client, **kw)
+
+    def patch(self, path, body=None, client=C_OFFICE, **kw):
+        return self.request("PATCH", path, body, client=client, **kw)
+
+    def put(self, path, body=None, client=C_OFFICE, **kw):
+        return self.request("PUT", path, body, client=client, **kw)
+
+    def delete(self, path, client=C_OFFICE, **kw):
+        return self.request("DELETE", path, client=client, **kw)
+
+    def _fetch(self, url):
+        """GET a pre-authenticated URL (e.g. @microsoft.graph.downloadUrl) as
+        bytes, without sending our bearer token to a foreign host."""
+        return self.request("GET", url, raw="bytes", auth=False)
+
+    def _writable(self):
+        if self.read_only:
+            raise PermissionError("this OutNote client is read_only; writes are disabled")
 
     def list(self, path, params=None, limit=None, client=C_OFFICE):
         """GET a collection, following @odata.nextLink; returns the combined
@@ -147,6 +203,32 @@ class OutNote:
 
     def email(self, message_id):
         return self.get(f"me/messages/{message_id}")
+
+    def attachments(self, message_id):
+        """Attachment metadata of a message (name, contentType, size, id,
+        isInline, @odata.type); an empty list when it has none."""
+        return self.list(
+            f"me/messages/{message_id}/attachments",
+            {"$select": "id,name,contentType,size,isInline,lastModifiedDateTime"},
+        )
+
+    def download_attachment(self, message_id, attachment_id, dest=None):
+        """An attachment's bytes, or the path written when `dest` (a file or a
+        directory) is given. File attachments are decoded from contentBytes;
+        attached Outlook items come back as MIME (.eml). Link ("reference")
+        attachments have no bytes and raise ValueError."""
+        base = f"me/messages/{message_id}/attachments/{attachment_id}"
+        att = self.get(base)
+        kind = att.get("@odata.type", "")
+        name = att.get("name") or attachment_id
+        if att.get("contentBytes") is not None:
+            data = base64.b64decode(att["contentBytes"])
+        elif kind.endswith("itemAttachment"):
+            data = self.get(base + "/$value", raw="bytes")
+            name += ".eml"
+        else:
+            raise ValueError(f"{kind or 'attachment'} has no downloadable content")
+        return _save(data, dest, name)
 
     # --- calendar -----------------------------------------------------------
     def events(self, start=None, end=None, top=25):
@@ -191,11 +273,24 @@ class OutNote:
         """OneDrive items. `path` is 'root' or 'root:/Folder/Sub:'."""
         return self.list(f"me/drive/{path}/children", {"$top": top}, limit=top)
 
+    def _item(self, item_id, drive_id=None):
+        base = f"drives/{drive_id}/items/{item_id}" if drive_id else f"me/drive/items/{item_id}"
+        return self.get(base)
+
     def download_url(self, item_id, drive_id=None):
         """A direct, pre-authed download URL for a drive item (works for OneDrive
         and channel files — pass the item's drive_id for the latter)."""
-        base = f"drives/{drive_id}/items/{item_id}" if drive_id else f"me/drive/items/{item_id}"
-        return self.get(base).get("@microsoft.graph.downloadUrl")
+        return self._item(item_id, drive_id).get("@microsoft.graph.downloadUrl")
+
+    def download(self, item_id, dest=None, drive_id=None):
+        """A drive item's bytes (OneDrive, SharePoint or channel files - pass
+        the item's drive_id for the latter two), or the path written when
+        `dest` (a file or a directory) is given."""
+        item = self._item(item_id, drive_id)
+        url = item.get("@microsoft.graph.downloadUrl")
+        if not url:
+            raise ValueError(f"{item.get('name', item_id)} is not a downloadable file")
+        return _save(self._fetch(url), dest, item.get("name") or item_id)
 
     def sites(self, search="*"):
         return self.list(f"sites?search={search}", client=C_SITES)

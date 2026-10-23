@@ -18,6 +18,7 @@ call. Already have a token? `OutNote(token)` or `OutNote.from_refresh_token(frt)
 """
 
 from ._auth import OFFICEHOME, AuthError, authenticate
+from ._extract import extract_text, html_to_text, vtt_to_text
 from ._graph import C_OFFICE, C_ONENOTE, C_SITES, GraphError, OutNote
 
 __all__ = [
@@ -29,4 +30,7 @@ __all__ = [
     "C_OFFICE",
     "C_ONENOTE",
     "C_SITES",
+    "extract_text",
+    "html_to_text",
+    "vtt_to_text",
 ]
