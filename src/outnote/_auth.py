@@ -2,22 +2,22 @@
 
 One sign-in (via `entrance`) against the pre-consented OfficeHome client yields
 a FOCI **family refresh token**; a broker then mints a Graph token for whichever
-first-party client a given call needs — all without further sign-ins. See the
-README for the token map and the (accounts-you-own) disclaimer.
+first-party client a given call needs — all without further sign-ins. The
+refresh token is persisted (atomically, 0600) so later runs skip the sign-in.
+See the README for the token map and the (accounts-you-own) disclaimer.
 """
 
 import base64
 import hashlib
-import json
+import os
 import secrets
-import time
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
+from ._base import C_OFFICE
+from ._broker import _TOKEN, Broker, TokenError, _post_token, read_secret, write_secret
 from ._graph import OutNote
 
 _AUTHORIZE = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize"
-_TOKEN = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 
 # The sign-in client: OfficeHome is pre-consented and issues a FOCI (family=1)
 # refresh token that the broker trades for the other family clients' tokens.
@@ -27,6 +27,8 @@ OFFICEHOME = "4765445b-32c6-49b0-83e6-1d93765276ca"
 _REDIRECT = "https://login.microsoftonline.com/common/oauth2/nativeclient"
 _SCOPES = "https://graph.microsoft.com/.default offline_access openid profile"
 
+_Broker = Broker  # backwards-compatible private name
+
 
 def _pkce():
     v = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
@@ -34,52 +36,21 @@ def _pkce():
     return v, c
 
 
-def _post_token(url, data):
-    req = Request(
-        url,
-        data=urlencode(data).encode(),
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
+def _from_store(frt_store, tenant):
+    """An `OutNote` built from the saved refresh token, or None if there is no
+    usable one (missing, expired or revoked — a dead token is deleted)."""
+    frt = read_secret(frt_store)
+    if not frt:
+        return None
+    broker = Broker(frt, tenant, store=frt_store)
     try:
-        with urlopen(req) as r:  # noqa: S310 - fixed https host
-            return json.loads(r.read())
-    except Exception as e:  # noqa: BLE001 - surface the AADSTS error body
-        body = getattr(e, "read", lambda: b"")()
-        try:
-            return json.loads(body)
-        except ValueError:
-            raise RuntimeError(f"Token endpoint error: {e}") from None
-
-
-class _Broker:
-    """Holds a FOCI family refresh token and mints/caches a Graph access token
-    per first-party client on demand. Callable as `broker(client_id) -> token`."""
-
-    def __init__(self, refresh_token, tenant="common"):
-        self._frt = refresh_token
-        self._url = _TOKEN.format(tenant=tenant)
-        self._cache = {}  # client_id -> (access_token, expiry_epoch)
-
-    def __call__(self, client_id):
-        tok, exp = self._cache.get(client_id, (None, 0))
-        if tok and exp - 60 > time.time():
-            return tok
-        r = _post_token(
-            self._url,
-            {
-                "grant_type": "refresh_token",
-                "refresh_token": self._frt,
-                "client_id": client_id,
-                "scope": "https://graph.microsoft.com/.default",
-            },
-        )
-        if not r.get("access_token"):
-            raise RuntimeError(
-                f"Could not get a token for client {client_id}: {r.get('error_description') or r}"
-            )
-        self._frt = r.get("refresh_token", self._frt)  # FRT rotates on use
-        self._cache[client_id] = (r["access_token"], time.time() + r.get("expires_in", 3600))
-        return r["access_token"]
+        broker(C_OFFICE)  # prove the token is alive before skipping sign-in
+    except TokenError as e:
+        if e.error in ("invalid_grant", "interaction_required"):
+            os.remove(frt_store)
+            return None
+        raise
+    return OutNote(broker)
 
 
 def authenticate(
@@ -90,15 +61,23 @@ def authenticate(
     totp_secret=None,
     totp_code=None,
     cookies=".ms_session.json",
+    frt_store=".ms_frt",
     **login_kwargs,
 ):
     """Sign in and return an `OutNote` client wired to a token broker.
 
-    No app registration or admin consent needed. `username`/`password` are
-    optional once `cookies` holds a live session (silent reuse). MFA: pass
-    `totp_secret` (Base32) or `totp_code`. Extra kwargs pass through to
-    `entrance.login`.
+    No app registration or admin consent needed. If `frt_store` holds a live
+    refresh token, no sign-in happens at all; otherwise `entrance` signs in and
+    the new token is saved there (pass `frt_store=None` to disable).
+    `username`/`password` are optional once `cookies` holds a live session.
+    MFA: pass `totp_secret` (Base32) or `totp_code`. Extra kwargs pass through
+    to `entrance.login`.
     """
+    if frt_store:
+        note = _from_store(frt_store, tenant)
+        if note:
+            return note
+
     from entrance import login  # deferred: only the sign-in path needs entrance
 
     verifier, challenge = _pkce()
@@ -148,4 +127,6 @@ def authenticate(
         raise RuntimeError(
             f"No refresh token from sign-in: {tokens.get('error_description') or tokens}"
         )
-    return OutNote(_Broker(frt, tenant))
+    if frt_store:
+        write_secret(frt_store, frt)
+    return OutNote(Broker(frt, tenant, store=frt_store))
