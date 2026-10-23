@@ -1,0 +1,30 @@
+"""OutNote — read Microsoft 365 over Graph, headless, no app registration.
+
+    from outnote import authenticate
+    note = authenticate("you@org.com", "password", totp_secret="BASE32")
+
+    note.emails()                      # mail
+    note.events()                      # calendar
+    note.chats(); note.chat_messages(id)        # Teams chats
+    note.teams(); note.channel_messages(t, c)   # Teams channels
+    note.channel_files(t, c)                    # files posted in a channel
+    note.files()                       # OneDrive
+    note.sites()                       # SharePoint
+    note.notebooks(); note.pages(sec); note.page_content(id)   # OneNote
+
+One sign-in yields a FOCI family refresh token; a broker mints the right
+first-party client's token per call. Already have a token? `OutNote(token)`.
+"""
+
+from ._auth import OFFICEHOME, authenticate
+from ._graph import C_OFFICE, C_ONENOTE, C_SITES, GraphError, OutNote
+
+__all__ = [
+    "OutNote",
+    "authenticate",
+    "GraphError",
+    "OFFICEHOME",
+    "C_OFFICE",
+    "C_ONENOTE",
+    "C_SITES",
+]

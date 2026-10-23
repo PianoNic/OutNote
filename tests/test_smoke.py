@@ -1,0 +1,76 @@
+"""Smoke tests: public surface, URL building, pagination, PKCE, broker routing.
+No network."""
+
+import base64
+import hashlib
+
+import outnote
+from outnote import _auth, _graph
+
+
+def test_public_surface():
+    assert callable(outnote.authenticate)
+    assert issubclass(outnote.GraphError, Exception)
+    assert outnote.OutNote("tok").token == "tok"
+
+
+def test_token_required():
+    try:
+        outnote.OutNote("")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("empty token should raise")
+
+
+def test_callable_token_provider_is_used_per_client():
+    seen = []
+    note = outnote.OutNote(lambda client: seen.append(client) or "tok-" + client[:4])
+    # static view: token is None when a provider is supplied
+    assert note.token is None
+    # the provider is invoked with the routed client id
+    assert note._tp(_graph.C_ONENOTE) == "tok-1fec"
+    assert _graph.C_ONENOTE in seen
+
+
+def test_url_building():
+    c = outnote.OutNote("tok")
+    assert c._url("me/messages") == _graph.GRAPH + "/me/messages"
+    assert c._url("me", {"$top": 5, "$select": None}) == _graph.GRAPH + "/me?%24top=5"
+    nxt = "https://graph.microsoft.com/v1.0/me/messages?$skip=10"
+    assert c._url(nxt, {"$top": 5}) == nxt + "&%24top=5"
+
+
+def test_list_follows_nextlink(monkeypatch):
+    pages = iter(
+        [
+            {"value": [1, 2], "@odata.nextLink": "https://x/next"},
+            {"value": [3]},
+        ]
+    )
+    c = outnote.OutNote("tok")
+    monkeypatch.setattr(c, "get", lambda *a, **k: next(pages))
+    assert c.list("me/messages") == [1, 2, 3]
+
+
+def test_list_respects_limit(monkeypatch):
+    c = outnote.OutNote("tok")
+    monkeypatch.setattr(c, "get", lambda *a, **k: {"value": [1, 2, 3, 4, 5]})
+    assert c.list("me/messages", limit=2) == [1, 2]
+
+
+def test_onenote_routes_to_onenote_client(monkeypatch):
+    calls = {}
+    c = outnote.OutNote("tok")
+    monkeypatch.setattr(
+        c, "list", lambda path, *a, **k: calls.setdefault("client", k.get("client"))
+    )
+    c.notebooks()
+    assert calls["client"] == _graph.C_ONENOTE
+
+
+def test_pkce_is_valid_s256():
+    v, ch = _auth._pkce()
+    expect = base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).rstrip(b"=")
+    assert ch == expect.decode()
+    assert "=" not in v and "=" not in ch
