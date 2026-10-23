@@ -93,3 +93,25 @@ def test_pkce_is_valid_s256():
     expect = base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).rstrip(b"=")
     assert ch == expect.decode()
     assert "=" not in v and "=" not in ch
+
+
+def test_inline_query_is_encoded():
+    c = outnote.OutNote("tok")
+    url = c._url('me/messages?$search="Mündlichprüfung x y ö"&$top=5')
+    assert " " not in url and '"' not in url
+    assert url == (
+        _graph.GRAPH
+        + "/me/messages?$search=%22M%C3%BCndlichpr%C3%BCfung%20x%20y%20%C3%B6%22&$top=5"
+    )
+    # already-encoded links and stray percent signs
+    assert c._url("https://x/a?q=%C3%B6") == "https://x/a?q=%C3%B6"
+    assert c._url("me/x?q=50% off") == _graph.GRAPH + "/me/x?q=50%25%20off"
+
+
+def test_search_keeps_hit_id(monkeypatch):
+    c = outnote.OutNote("tok")
+    hit = {"hitId": "AAMk1", "resource": {"subject": "Hi"}}
+    monkeypatch.setattr(
+        c, "post", lambda *a, **k: {"value": [{"hitsContainers": [{"hits": [hit]}]}]}
+    )
+    assert c.search_emails("hi")[0] == {"subject": "Hi", "id": "AAMk1"}

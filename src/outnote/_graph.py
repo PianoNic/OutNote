@@ -7,15 +7,21 @@ GET + Bearer + JSON, so this leans on stdlib urllib.
 """
 
 import json
+import re
 import time
 from urllib.error import HTTPError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 _MAX_PAGES = 50  # ponytail: hard stop so follow-the-nextLink can't loop forever
 _TIMEOUT = 30  # seconds per request, so a hung connection can't block forever
 _RETRIES = 4  # retries on 429/503, honoring Retry-After
+# characters left alone when encoding a URL: reserved delimiters plus `%` (so
+# already-encoded nextLinks pass through untouched); a stray `%` that is not
+# an escape is handled separately in _url
+_URL_SAFE = ":/?#[]@!$&'()*+,;=%~"
+_STRAY_PCT = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
 # FOCI family clients, each pre-consented for the scopes that service needs.
 C_OFFICE = "d3590ed6-52b3-4102-aeff-aad2292ab01c"  # mail, calendar, chat, channels, files, teams, contacts, tasks
@@ -54,6 +60,9 @@ class OutNote:
     # --- transport ----------------------------------------------------------
     def _url(self, path, params=None):
         url = path if path.startswith("http") else self.base + "/" + path.lstrip("/")
+        # a query written into the path (`me/messages?$search="x y ö"`) may carry
+        # spaces, quotes or non-ASCII; percent-encode those, leave escapes alone
+        url = quote(_STRAY_PCT.sub("%25", url), safe=_URL_SAFE)
         if params:
             q = urlencode({k: v for k, v in params.items() if v is not None})
             if q:
@@ -219,7 +228,8 @@ class OutNote:
     # --- search (unified Graph /search/query) -------------------------------
     def search(self, query, entity="message", top=25):
         """Search one entity type across the account and return the matched
-        resources. `entity` is one of: 'message' (email), 'driveItem' (files),
+        resources, each with its `id` set to the hit id (usable with `email(id)`,
+        `download(id)`, ...). `entity` is one of: 'message' (email), 'driveItem' (files),
         'chatMessage' (Teams chat/channel messages), 'event' (calendar),
         'person', 'site', 'listItem'. (Graph only allows one of these per
         request, so search one kind at a time.)"""
@@ -230,7 +240,9 @@ class OutNote:
         data = self.post("search/query", body, client=client)
         containers = (data.get("value") or [{}])[0].get("hitsContainers") or []
         hits = containers[0].get("hits", []) if containers else []
-        return [h["resource"] for h in hits]
+        # the hit's `hitId` is the item id (a message `resource` has none of its
+        # own), so callers can follow up with email(id) etc.
+        return [{**h["resource"], "id": h.get("hitId") or h["resource"].get("id")} for h in hits]
 
     def search_emails(self, query, top=25):
         return self.search(query, "message", top)
