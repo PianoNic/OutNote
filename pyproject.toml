@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "outnote"
-version = "0.1.1"
+version = "1.0.0"
 description = "Headless Microsoft 365 client - mail, calendar, Teams, OneDrive, SharePoint and OneNote over Graph, no app registration."
 readme = "README.md"
 requires-python = ">=3.10"
