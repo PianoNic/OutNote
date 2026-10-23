@@ -115,3 +115,58 @@ def test_search_keeps_hit_id(monkeypatch):
         c, "post", lambda *a, **k: {"value": [{"hitsContainers": [{"hits": [hit]}]}]}
     )
     assert c.search_emails("hi")[0] == {"subject": "Hi", "id": "AAMk1"}
+
+
+def _fake_token_endpoint(monkeypatch, replies):
+    calls = []
+
+    def fake(url, data):
+        calls.append(data)
+        return replies.pop(0)
+
+    monkeypatch.setattr(_auth, "_post_token", fake)
+    return calls
+
+
+def test_broker_persists_rotated_token_atomically(tmp_path, monkeypatch):
+    import os
+    import stat
+
+    store = tmp_path / ".ms_frt"
+    _fake_token_endpoint(monkeypatch, [{"access_token": "a1", "refresh_token": "frt2"}])
+    b = _auth._Broker("frt1", frt_path=str(store))
+    assert store.read_text() == "frt1"
+    assert stat.S_IMODE(os.stat(store).st_mode) == 0o600
+    assert b(_graph.C_OFFICE) == "a1"
+    assert store.read_text() == "frt2"
+    assert [p.name for p in tmp_path.iterdir()] == [".ms_frt"]  # no temp leftovers
+
+
+def test_broker_loads_store_and_clears_it_on_invalid_grant(tmp_path, monkeypatch):
+    store = tmp_path / ".ms_frt"
+    store.write_text("saved\n")
+    calls = _fake_token_endpoint(monkeypatch, [{"error": "invalid_grant"}])
+    b = _auth._Broker(frt_path=str(store))
+    try:
+        b(_graph.C_OFFICE)
+    except outnote.AuthError as e:
+        assert e.error == "invalid_grant"
+    else:
+        raise AssertionError("invalid_grant should raise")
+    assert calls[0]["refresh_token"] == "saved"
+    assert not store.exists()
+
+
+def test_authenticate_reuses_store_without_sign_in(tmp_path, monkeypatch):
+    store = tmp_path / ".ms_frt"
+    store.write_text("saved")
+    _fake_token_endpoint(monkeypatch, [{"access_token": "a", "refresh_token": "next"}])
+    note = outnote.authenticate(frt_store=str(store))  # entrance is never imported
+    assert note._tp(_graph.C_OFFICE) == "a"
+    assert store.read_text() == "next"
+
+
+def test_from_refresh_token(monkeypatch):
+    _fake_token_endpoint(monkeypatch, [{"access_token": "a"}])
+    note = outnote.OutNote.from_refresh_token("frt", read_only=True)
+    assert note.read_only and note._tp(_graph.C_OFFICE) == "a"

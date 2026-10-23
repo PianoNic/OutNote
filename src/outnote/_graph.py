@@ -47,15 +47,26 @@ class GraphError(RuntimeError):
 
 
 class OutNote:
-    def __init__(self, token, base=GRAPH):
+    def __init__(self, token, base=GRAPH, read_only=False):
         """`token` is either an access-token string (used for every call) or a
         callable `client_id -> access_token` (the broker from `authenticate`,
-        which hands each service the right client's token)."""
+        which hands each service the right client's token). `read_only=True`
+        makes every method that changes the account raise."""
         if not token:
             raise ValueError("token is required")
         self._tp = token if callable(token) else (lambda _client: token)
         self.token = token if isinstance(token, str) else None
         self.base = base.rstrip("/")
+        self.read_only = read_only
+
+    @classmethod
+    def from_refresh_token(cls, refresh_token=None, tenant="common", frt_path=None, **kw):
+        """Build a client from a saved FOCI family refresh token - no sign-in.
+        Pass the token, or `frt_path` to load it from (and keep rotating it
+        into) a file written by `authenticate(frt_store=...)`."""
+        from ._auth import _Broker  # deferred: _auth imports this module
+
+        return cls(_Broker(refresh_token, tenant, frt_path=frt_path), **kw)
 
     # --- transport ----------------------------------------------------------
     def _url(self, path, params=None):

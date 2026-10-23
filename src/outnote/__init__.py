@@ -12,17 +12,19 @@
     note.sites()                       # SharePoint
     note.notebooks(); note.pages(sec); note.page_content(id)   # OneNote
 
-One sign-in yields a FOCI family refresh token; a broker mints the right
-first-party client's token per call. Already have a token? `OutNote(token)`.
+One sign-in yields a FOCI family refresh token (saved to `.ms_frt`, so later
+runs skip the sign-in); a broker mints the right first-party client's token per
+call. Already have a token? `OutNote(token)` or `OutNote.from_refresh_token(frt)`.
 """
 
-from ._auth import OFFICEHOME, authenticate
+from ._auth import OFFICEHOME, AuthError, authenticate
 from ._graph import C_OFFICE, C_ONENOTE, C_SITES, GraphError, OutNote
 
 __all__ = [
     "OutNote",
     "authenticate",
     "GraphError",
+    "AuthError",
     "OFFICEHOME",
     "C_OFFICE",
     "C_ONENOTE",
