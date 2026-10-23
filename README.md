@@ -25,7 +25,7 @@ Every "read my mailbox over Graph" tutorial makes you register an Azure app and 
 
 It signs in with [`entrance`](https://github.com/PianoNic/Entrance) using the pre-consented **OfficeHome** first-party client, which hands back a **FOCI family refresh token**. A tiny broker then trades that token for whichever first-party client's token a given call needs - all without another sign-in. Each of those clients is already consented in the tenant, so there is **nothing to register and nobody to ask**.
 
-The result: one headless login (password + TOTP MFA, no browser), then clean reads *and writes* across your whole Microsoft 365 account. Built to be the base layer for an MCP server.
+The result: one headless login (password + TOTP MFA, no browser), then clean reads *and writes* across your whole Microsoft 365 account.
 
 ## Features
 

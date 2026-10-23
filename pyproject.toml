@@ -29,7 +29,6 @@ keywords = [
     "no-app-registration",
     "foci",
     "entra",
-    "mcp",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
