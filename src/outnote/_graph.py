@@ -7,12 +7,15 @@ GET + Bearer + JSON, so this leans on stdlib urllib.
 """
 
 import json
+import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 _MAX_PAGES = 50  # ponytail: hard stop so follow-the-nextLink can't loop forever
+_TIMEOUT = 30  # seconds per request, so a hung connection can't block forever
+_RETRIES = 4  # retries on 429/503, honoring Retry-After
 
 # FOCI family clients, each pre-consented for the scopes that service needs.
 C_OFFICE = "d3590ed6-52b3-4102-aeff-aad2292ab01c"  # mail, calendar, chat, channels, files, teams, contacts, tasks
@@ -58,17 +61,23 @@ class OutNote:
         return url
 
     def _send(self, req, raw=False):
-        try:
-            with urlopen(req) as r:  # noqa: S310 - fixed https host
-                body = r.read()
-        except HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")
+        for attempt in range(_RETRIES + 1):
             try:
-                detail = json.loads(detail)["error"]["message"]
-            except (ValueError, KeyError, TypeError):
-                pass
-            raise GraphError(e.code, detail) from None
-        return body.decode("utf-8") if raw else json.loads(body)
+                with urlopen(req, timeout=_TIMEOUT) as r:  # noqa: S310 - fixed https host
+                    body = r.read()
+                return body.decode("utf-8") if raw else json.loads(body)
+            except HTTPError as e:
+                # Graph throttles with 429 (and 503); back off and retry.
+                if e.code in (429, 503) and attempt < _RETRIES:
+                    ra = e.headers.get("Retry-After")
+                    time.sleep(float(ra) if ra and ra.replace(".", "", 1).isdigit() else 2**attempt)
+                    continue
+                detail = e.read().decode("utf-8", "replace")
+                try:
+                    detail = json.loads(detail)["error"]["message"]
+                except (ValueError, KeyError, TypeError):
+                    pass
+                raise GraphError(e.code, detail) from None
 
     def get(self, path, params=None, raw=False, client=C_OFFICE):
         """One GET against `client`'s token. `raw=True` returns body text
