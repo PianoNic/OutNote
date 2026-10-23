@@ -356,3 +356,61 @@ def test_try_clients_falls_back_on_403_and_remembers(monkeypatch):
     assert note._try_clients("presence", call) == "ok"
     assert note._try_clients("presence", call) == "ok"
     assert calls == [_graph.C_OFFICE, _graph.C_TEAMS, _graph.C_TEAMS]
+
+
+def test_batch_chunks_maps_errors_and_retries_throttled(graph, monkeypatch):
+    monkeypatch.setattr(_graph.time, "sleep", lambda s: None)
+    n = graph.note
+    replies = iter(
+        [
+            {
+                "responses": [{"id": str(i), "status": 200, "body": {"n": i}} for i in range(1, 20)]
+                + [{"id": "0", "status": 429, "headers": {"Retry-After": "1"}}]
+            },
+            {
+                "responses": [
+                    {"id": "20", "status": 404, "body": {"error": {"message": "gone"}}},
+                    {"id": "21", "status": 200, "body": {"n": 21}},
+                ]
+            },
+            {"responses": [{"id": "0", "status": 200, "body": {"n": 0}}]},
+        ]
+    )
+    sent = []
+    monkeypatch.setattr(
+        n, "post", lambda path, body, client=None: sent.append(body) or next(replies)
+    )
+    reqs = [f"me/messages/{i}" for i in range(21)] + [
+        {"url": _graph.GRAPH + "/me/sendMail", "method": "post", "body": {"x": 1}}
+    ]
+    out = n.batch(reqs)
+    assert [len(b["requests"]) for b in sent] == [20, 2, 1]
+    assert sent[1]["requests"][1] == {
+        "id": "21",
+        "method": "POST",
+        "url": "/me/sendMail",
+        "body": {"x": 1},
+        "headers": {"Content-Type": "application/json"},
+    }
+    assert out[0] == {"n": 0} and out[19] == {"n": 19} and out[21] == {"n": 21}
+    assert isinstance(out[20], outnote.GraphError) and out[20].status == 404
+
+
+def test_delta_follows_pages_and_reuses_token(graph):
+    graph.add(
+        "GET",
+        "/me/mailFolders/inbox/messages/delta",
+        {"value": [1], "@odata.nextLink": "https://g/p2"},
+    )
+    graph.add("GET", "https://g/p2", {"value": [2], "@odata.deltaLink": "https://g/d1"})
+    graph.add(
+        "GET",
+        "https://g/d1",
+        {"value": [{"id": "x", "@removed": {}}], "@odata.deltaLink": "https://g/d2"},
+    )
+    items, token = graph.note.delta("me/mailFolders/inbox/messages")
+    assert (items, token) == ([1, 2], "https://g/d1")
+    assert graph.note.delta("ignored", token=token) == (
+        [{"id": "x", "@removed": {}}],
+        "https://g/d2",
+    )

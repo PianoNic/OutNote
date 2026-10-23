@@ -47,6 +47,10 @@ _SEARCH_CLIENT = {
 }
 
 
+def _encode(url):
+    return quote(_STRAY_PCT.sub("%25", url), safe=_URL_SAFE)
+
+
 def _retry_after(header, attempt):
     return float(header) if header and header.replace(".", "", 1).isdigit() else 2**attempt
 
@@ -97,7 +101,7 @@ class OutNote:
         url = path if path.startswith("http") else self.base + "/" + path.lstrip("/")
         # a query written into the path (`me/messages?$search="x y ö"`) may carry
         # spaces, quotes or non-ASCII; percent-encode those, leave escapes alone
-        url = quote(_STRAY_PCT.sub("%25", url), safe=_URL_SAFE)
+        url = _encode(url)
         if params:
             q = urlencode({k: v for k, v in params.items() if v is not None})
             if q:
@@ -216,6 +220,71 @@ class OutNote:
             if not url:
                 break
         return out
+
+    # --- batch & delta ------------------------------------------------------
+    def batch(self, requests, client=C_OFFICE):
+        """Run many requests in few round-trips (Graph `$batch`, 20 per call).
+        Each request is a path (a GET) or a dict with `url` and optional
+        `method`, `body`, `headers`. Returns one result per request, in order:
+        the response body, or a GraphError for a failed one (returned, not
+        raised). Throttled sub-requests are retried with backoff."""
+        items = []
+        for i, r in enumerate(requests):
+            r = {"url": r} if isinstance(r, str) else r
+            url = r["url"][len(self.base) :] if r["url"].startswith(self.base) else r["url"]
+            item = {"id": str(i), "method": r.get("method", "GET").upper()}
+            item["url"] = _encode("/" + url.lstrip("/"))
+            headers = dict(r.get("headers") or {})
+            if r.get("body") is not None:
+                item["body"] = r["body"]
+                headers.setdefault("Content-Type", "application/json")
+            if headers:
+                item["headers"] = headers
+            items.append(item)
+
+        results = {}
+        pending = items
+        for attempt in range(_RETRIES + 1):
+            throttled, wait = [], 0.0
+            for k in range(0, len(pending), 20):
+                chunk = {x["id"]: x for x in pending[k : k + 20]}
+                reply = self.post("$batch", {"requests": list(chunk.values())}, client=client)
+                for r in reply.get("responses", []):
+                    status, body = r.get("status", 0), r.get("body")
+                    if status in (429, 503) and attempt < _RETRIES:
+                        throttled.append(chunk[r["id"]])
+                        ra = (r.get("headers") or {}).get("Retry-After")
+                        wait = max(wait, _retry_after(ra, attempt))
+                    elif status >= 400:
+                        err = body.get("error", {}) if isinstance(body, dict) else {}
+                        results[r["id"]] = GraphError(status, err.get("message") or body)
+                    else:
+                        results[r["id"]] = body
+            if not throttled:
+                break
+            time.sleep(wait)
+            pending = throttled
+        return [results.get(x["id"]) for x in items]
+
+    def delta(self, resource, token=None, params=None, client=C_OFFICE):
+        """Incremental sync. The first call returns `(items, token)` with
+        everything in `resource`; pass the saved `token` back to get only what
+        changed since (removed items carry `@removed`). `resource` is e.g.
+        'me/mailFolders/inbox/messages', 'me/drive/root', 'me/contacts', or
+        'me/calendarView' with `params={"startDateTime": ..., "endDateTime": ...}`."""
+        if token:
+            url = token
+        else:
+            path = resource.rstrip("/")
+            url = self._url(path if path.endswith("/delta") else path + "/delta", params)
+        items = []
+        while url:
+            page = self.get(url, client=client)
+            items.extend(page.get("value", []))
+            if page.get("@odata.deltaLink"):
+                return items, page["@odata.deltaLink"]
+            url = page.get("@odata.nextLink")
+        return items, None
 
     # --- mail ---------------------------------------------------------------
     def mail_folders(self, parent_id=None):
