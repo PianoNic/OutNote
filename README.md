@@ -76,6 +76,13 @@ note.files()  # OneDrive items
 note.download_url(item_id)  # direct, pre-authed download link
 note.sites()  # SharePoint sites
 
+# search across the account
+note.search_emails("invoice")
+note.search_files("budget.xlsx")
+note.search_messages("standup")  # Teams chat & channel messages
+note.search_people("Fischer")
+note.search("project kickoff", entity="event")  # any entity type
+
 # OneNote - list and read page content as HTML
 for nb in note.notebooks():
     for sec in note.sections(nb["id"]):
@@ -110,6 +117,7 @@ Verified end-to-end against a live locked-down EDU tenant:
 | SharePoint | `sites(search)`, `site_drive_items(id)` | `/sites`, `/sites/{id}/drive` |
 | OneNote | `notebooks()`, `sections(nb)`, `pages(sec)`, `page_content(id)` | `/me/onenote/...` |
 | Contacts / Tasks | `contacts()`, `task_lists()`, `tasks(list)` | `/me/contacts`, `/me/todo/lists` |
+| Search | `search_emails(q)`, `search_files(q)`, `search_messages(q)`, `search_people(q)`, `search(q, entity)` | `/search/query` (message, driveItem, chatMessage, event, person, site) |
 | Anything | `get(path)`, `list(path)` | any endpoint, follows `@odata.nextLink` |
 
 ## How It Works

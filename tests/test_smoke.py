@@ -69,6 +69,25 @@ def test_onenote_routes_to_onenote_client(monkeypatch):
     assert calls["client"] == _graph.C_ONENOTE
 
 
+def test_search_builds_query_and_unwraps_hits(monkeypatch):
+    captured = {}
+    c = outnote.OutNote("tok")
+
+    def fake_post(path, body, client=None):
+        captured["path"] = path
+        captured["body"] = body
+        captured["client"] = client
+        return {"value": [{"hitsContainers": [{"hits": [{"resource": {"id": "a"}}]}]}]}
+
+    monkeypatch.setattr(c, "post", fake_post)
+    out = c.search_files("budget")
+    assert out == [{"id": "a"}]
+    assert captured["path"] == "search/query"
+    assert captured["body"]["requests"][0]["entityTypes"] == ["driveItem"]
+    assert captured["body"]["requests"][0]["query"]["queryString"] == "budget"
+    assert captured["client"] == _graph.C_OFFICE
+
+
 def test_pkce_is_valid_s256():
     v, ch = _auth._pkce()
     expect = base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).rstrip(b"=")

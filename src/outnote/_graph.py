@@ -19,6 +19,17 @@ C_OFFICE = "d3590ed6-52b3-4102-aeff-aad2292ab01c"  # mail, calendar, chat, chann
 C_ONENOTE = "1fec8e78-bce4-4aaf-ab1b-5451cc387264"  # OneNote (Notes.ReadWrite.All)
 C_SITES = "4765445b-32c6-49b0-83e6-1d93765276ca"  # SharePoint sites (Sites.Read.All)
 
+# which client's token each unified-search entity type needs
+_SEARCH_CLIENT = {
+    "message": C_OFFICE,
+    "event": C_OFFICE,
+    "driveItem": C_OFFICE,
+    "chatMessage": C_OFFICE,
+    "person": C_OFFICE,
+    "site": C_SITES,
+    "listItem": C_SITES,
+}
+
 
 class GraphError(RuntimeError):
     def __init__(self, status, message):
@@ -46,13 +57,7 @@ class OutNote:
                 url += ("&" if "?" in url else "?") + q
         return url
 
-    def get(self, path, params=None, raw=False, client=C_OFFICE):
-        """One GET against `client`'s token. `raw=True` returns body text
-        (OneNote page content is HTML, not JSON)."""
-        req = Request(
-            self._url(path, params),
-            headers={"Authorization": f"Bearer {self._tp(client)}", "Accept": "application/json"},
-        )
+    def _send(self, req, raw=False):
         try:
             with urlopen(req) as r:  # noqa: S310 - fixed https host
                 body = r.read()
@@ -64,6 +69,28 @@ class OutNote:
                 pass
             raise GraphError(e.code, detail) from None
         return body.decode("utf-8") if raw else json.loads(body)
+
+    def get(self, path, params=None, raw=False, client=C_OFFICE):
+        """One GET against `client`'s token. `raw=True` returns body text
+        (OneNote page content is HTML, not JSON)."""
+        req = Request(
+            self._url(path, params),
+            headers={"Authorization": f"Bearer {self._tp(client)}", "Accept": "application/json"},
+        )
+        return self._send(req, raw)
+
+    def post(self, path, body, client=C_OFFICE):
+        """One POST of a JSON body against `client`'s token."""
+        req = Request(
+            self._url(path),
+            data=json.dumps(body).encode(),
+            headers={
+                "Authorization": f"Bearer {self._tp(client)}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
+        return self._send(req)
 
     def list(self, path, params=None, limit=None, client=C_OFFICE):
         """GET a collection, following @odata.nextLink; returns the combined
@@ -179,6 +206,35 @@ class OutNote:
 
     def tasks(self, list_id, top=50):
         return self.list(f"me/todo/lists/{list_id}/tasks", {"$top": top}, limit=top)
+
+    # --- search (unified Graph /search/query) -------------------------------
+    def search(self, query, entity="message", top=25):
+        """Search one entity type across the account and return the matched
+        resources. `entity` is one of: 'message' (email), 'driveItem' (files),
+        'chatMessage' (Teams chat/channel messages), 'event' (calendar),
+        'person', 'site', 'listItem'. (Graph only allows one of these per
+        request, so search one kind at a time.)"""
+        client = _SEARCH_CLIENT.get(entity, C_OFFICE)
+        body = {
+            "requests": [{"entityTypes": [entity], "query": {"queryString": query}, "size": top}]
+        }
+        data = self.post("search/query", body, client=client)
+        containers = (data.get("value") or [{}])[0].get("hitsContainers") or []
+        hits = containers[0].get("hits", []) if containers else []
+        return [h["resource"] for h in hits]
+
+    def search_emails(self, query, top=25):
+        return self.search(query, "message", top)
+
+    def search_files(self, query, top=25):
+        return self.search(query, "driveItem", top)
+
+    def search_messages(self, query, top=25):
+        """Search Teams chat and channel messages."""
+        return self.search(query, "chatMessage", top)
+
+    def search_people(self, query, top=25):
+        return self.search(query, "person", top)
 
     def me(self):
         return self.get("me")
