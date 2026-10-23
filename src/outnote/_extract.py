@@ -123,6 +123,24 @@ def html_to_text(html, markdown=False):
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
+class _Images(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.found = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "img":
+            self.found.append(dict(attrs))
+
+
+def html_images(html):
+    """The attributes of every `<img>` in `html`, in order."""
+    p = _Images()
+    p.feed(html or "")
+    p.close()
+    return p.found
+
+
 def _xml_text(xml, para, extra=()):
     for pat, rep in extra:
         xml = re.sub(pat, rep, xml)

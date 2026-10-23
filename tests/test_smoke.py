@@ -300,3 +300,59 @@ def test_html_to_text():
     assert outnote.html_to_text(teams) == "Hi Anna, see 👍\n\n- one\n- two"
     page = "<html><head><title>Mathe</title></head><body><h2>Ziele</h2><p><b>Bruch</b>rechnen</p>"
     assert outnote.html_to_text(page, markdown=True) == "# Mathe\n\n## Ziele\n\n**Bruch**rechnen"
+
+
+def test_onenote_group_scope_and_images(graph):
+    page = (
+        '<html><body><p>x</p><img alt="Ziele" src="https://graph.microsoft.com/v1.0/r/1/$value"'
+        ' data-fullres-src="https://graph.microsoft.com/v1.0/r/1full/$value"'
+        ' data-fullres-src-type="image/png"></body></html>'
+    )
+    graph.add("GET", "/groups/g1/onenote/pages/p1/content", page.encode())
+    graph.add("GET", "/r/1full/$value", b"PNG")
+    imgs = graph.note.page_images("p1", group_id="g1")
+    assert imgs == [
+        {
+            "alt": "Ziele",
+            "content_type": "image/png",
+            "url": "https://graph.microsoft.com/v1.0/r/1full/$value",
+            "data": b"PNG",
+        }
+    ]
+    assert graph.note.page_text("p1", group_id="g1") == "x\n\n[Ziele]"
+
+
+def test_pages_sorted_newest_first(graph):
+    graph.add(
+        "GET",
+        "/me/onenote/sections/s1/pages",
+        {
+            "value": [
+                {"id": "a", "lastModifiedDateTime": "2026-01-01"},
+                {"id": "b", "lastModifiedDateTime": "2026-02-01"},
+            ]
+        },
+    )
+    assert [p["id"] for p in graph.note.pages("s1")] == ["b", "a"]
+
+
+def test_photo_none_on_404(graph):
+    from urllib.error import HTTPError
+
+    graph.add("GET", "/me/photo/$value", HTTPError("u", 404, "nf", {}, io.BytesIO(b"{}")))
+    assert graph.note.photo() is None
+
+
+def test_try_clients_falls_back_on_403_and_remembers(monkeypatch):
+    note = outnote.OutNote(lambda c: "t-" + c)
+    calls = []
+
+    def call(client):
+        calls.append(client)
+        if client == _graph.C_OFFICE:
+            raise outnote.GraphError(403, "nope")
+        return "ok"
+
+    assert note._try_clients("presence", call) == "ok"
+    assert note._try_clients("presence", call) == "ok"
+    assert calls == [_graph.C_OFFICE, _graph.C_TEAMS, _graph.C_TEAMS]
