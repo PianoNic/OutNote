@@ -11,6 +11,8 @@ venv/
 
 # Credentials / runtime
 .ms_session.json
+.ms_frt
+.outnote-*.tmp
 *.token
 gtoken.txt
 
