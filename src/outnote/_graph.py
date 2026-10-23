@@ -9,7 +9,7 @@ GET + Bearer + JSON, so this leans on stdlib urllib.
 import json
 import time
 from urllib.error import HTTPError
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, quote, urlencode
 from urllib.request import Request, urlopen
 
 GRAPH = "https://graph.microsoft.com/v1.0"
@@ -54,6 +54,14 @@ class OutNote:
     # --- transport ----------------------------------------------------------
     def _url(self, path, params=None):
         url = path if path.startswith("http") else self.base + "/" + path.lstrip("/")
+        if "?" in url:
+            # A query string carried in `path` is raw caller input (search
+            # terms, umlauts, spaces); re-encode it so urllib does not reject
+            # control characters. The dict-`params` path below is unchanged.
+            head, _, query = url.partition("?")
+            pairs = parse_qsl(query, keep_blank_values=True)
+            encoded = urlencode(pairs, quote_via=quote)
+            url = head + ("?" + encoded if encoded else "")
         if params:
             q = urlencode({k: v for k, v in params.items() if v is not None})
             if q:

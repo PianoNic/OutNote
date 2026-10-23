@@ -38,7 +38,9 @@ def test_url_building():
     assert c._url("me/messages") == _graph.GRAPH + "/me/messages"
     assert c._url("me", {"$top": 5, "$select": None}) == _graph.GRAPH + "/me?%24top=5"
     nxt = "https://graph.microsoft.com/v1.0/me/messages?$skip=10"
-    assert c._url(nxt, {"$top": 5}) == nxt + "&%24top=5"
+    assert c._url(nxt, {"$top": 5}) == (
+        "https://graph.microsoft.com/v1.0/me/messages?%24skip=10&%24top=5"
+    )
 
 
 def test_list_follows_nextlink(monkeypatch):
@@ -93,3 +95,16 @@ def test_pkce_is_valid_s256():
     expect = base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).rstrip(b"=")
     assert ch == expect.decode()
     assert "=" not in v and "=" not in ch
+
+
+def test_inline_query_is_percent_encoded():
+    c = outnote.OutNote("tok")
+
+    url = c._url('me/messages?$search="Mündlichprüfung x y"&$top=5')
+
+    assert " " not in url
+    assert "M%C3%BCndlichpr%C3%BCfung" in url
+    assert url == (
+        _graph.GRAPH
+        + "/me/messages?%24search=%22M%C3%BCndlichpr%C3%BCfung%20x%20y%22&%24top=5"
+    )
