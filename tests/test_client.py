@@ -440,9 +440,33 @@ def test_extract_text_docx_pptx_unknown():
 def test_cli_text_rendering(monkeypatch, capsys):
     fake = outnote.OutNote("tok")
     monkeypatch.setattr(fake, "me", lambda: {"displayName": "N", "mail": "n@x.ch"})
-    monkeypatch.setattr(_cli, "_client", lambda: fake)
+    monkeypatch.setattr(_cli, "_client", lambda browser=False: fake)
     assert _cli.main(["--text", "me"]) == 0
     assert capsys.readouterr().out.strip() == "N <n@x.ch>"
+
+
+def test_cli_not_signed_in_prints_help_not_traceback(monkeypatch, capsys):
+    from entrance import LoginFailed
+
+    def no_creds(browser=False):
+        raise LoginFailed("nope")
+
+    monkeypatch.setattr(_cli, "_client", no_creds)
+    assert _cli.main(["chats", "--unread"]) == 2
+    err = capsys.readouterr().err
+    assert "Not signed in" in err and "outnote signin" in err
+    assert "Traceback" not in err
+
+
+def test_cli_signin_uses_browser_and_confirms(monkeypatch, capsys):
+    fake = outnote.OutNote("tok")
+    monkeypatch.setattr(fake, "me", lambda: {"displayName": "N", "userPrincipalName": "n@x.ch"})
+    seen = {}
+    monkeypatch.setattr(_cli, "_client", lambda browser=False: seen.update(browser=browser) or fake)
+    assert _cli.main(["login"]) == 0  # alias for signin
+    assert seen["browser"] is True  # browser sign-in forced
+    out = capsys.readouterr().out
+    assert "Signed in as N <n@x.ch>" in out
 
 
 # --- fixes found by watching the Teams web client --------------------------------

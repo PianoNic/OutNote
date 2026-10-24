@@ -10,17 +10,28 @@ import json
 import os
 import sys
 
+from entrance import LoginFailed, TokenError
+
 from ._auth import authenticate
+from ._base import GraphError
 from ._text import message_text
 
+_SIGNIN_HELP = """Not signed in. Do one of:
+  - sign in in your browser (easiest):   outnote signin
+  - or set credentials (first run only):
+      OUTNOTE_USER / OUTNOTE_PASSWORD / OUTNOTE_TOTP   (set on Windows, export on POSIX)
+Either way a refresh token is saved (OUTNOTE_FRT, default .ms_frt), so later runs
+need neither. You can also add --browser to any command."""
 
-def _client():
+
+def _client(browser=False):
     return authenticate(
         os.environ.get("OUTNOTE_USER"),
         os.environ.get("OUTNOTE_PASSWORD"),
         totp_secret=os.environ.get("OUTNOTE_TOTP"),
         cookies=os.environ.get("OUTNOTE_COOKIES", ".ms_session.json"),
         frt_store=os.environ.get("OUTNOTE_FRT", ".ms_frt"),
+        interactive="always" if browser else False,
     )
 
 
@@ -74,7 +85,17 @@ def _text(cmd, data, note):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="outnote", description="Microsoft 365 over Graph.")
     ap.add_argument("--text", action="store_true", help="readable output instead of JSON")
+    ap.add_argument(
+        "--browser",
+        action="store_true",
+        help="sign in in a browser (no OUTNOTE_USER/PASSWORD needed)",
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser(
+        "signin",
+        aliases=["login"],
+        help="sign in in a browser and save the session for later runs",
+    )
     sub.add_parser("me")
     p = sub.add_parser("mail")
     p.add_argument("--folder", default="inbox")
@@ -100,8 +121,39 @@ def main(argv=None):
     p = sub.add_parser("get", help="raw GET of any Graph path")
     p.add_argument("path")
     a = ap.parse_args(argv)
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    signin = a.cmd in ("signin", "login")
 
-    note = _client()
+    try:
+        note = _client(browser=a.browser or signin)
+    except LoginFailed:
+        print(_SIGNIN_HELP, file=sys.stderr)
+        return 2
+    except TokenError as e:
+        print(f"Sign-in failed: {e}", file=sys.stderr)
+        if e.error in ("invalid_grant", "interaction_required"):
+            print("\n" + _SIGNIN_HELP, file=sys.stderr)
+        return 2
+
+    if signin:
+        me = note.me()
+        store = os.environ.get("OUTNOTE_FRT", ".ms_frt")
+        print(f"Signed in as {me.get('displayName')} <{me.get('userPrincipalName')}>.")
+        print(f"Session saved to {store} - later commands reuse it, no sign-in needed.")
+        return 0
+
+    try:
+        data = _run(a, note)
+    except GraphError as e:
+        print(f"Graph error: {e}", file=sys.stderr)
+        return 1
+
+    out = _text(a.cmd, data, note) if a.text else json.dumps(data, indent=2, ensure_ascii=False)
+    print(out)
+    return 0
+
+
+def _run(a, note):
     if a.cmd == "me":
         data = note.me()
     elif a.cmd == "mail":
@@ -120,11 +172,7 @@ def main(argv=None):
         data = note.files(a.path)
     else:
         data = note.get(a.path)
-
-    out = _text(a.cmd, data, note) if a.text else json.dumps(data, indent=2, ensure_ascii=False)
-    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-    print(out)
-    return 0
+    return data
 
 
 if __name__ == "__main__":
