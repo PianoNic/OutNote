@@ -88,8 +88,11 @@ note.create_task(list_id, "Hand in essay", due=friday)
 
 ## CLI
 
+Sign in once - a browser opens for the full login (email, password, 2FA), and the
+session is saved so later commands need nothing:
+
 ```bash
-export OUTNOTE_USER=you@school.ch OUTNOTE_PASSWORD=... OUTNOTE_TOTP=BASE32   # first run only
+outnote signin          # or: outnote login
 outnote --text chats --unread
 outnote --text mail --unread
 outnote --text events
@@ -97,5 +100,12 @@ outnote send friend@school.ch "on my way"
 outnote get me/drive/root/children
 ```
 
-Credentials are read from the environment, never from argv; after the first
-sign-in the saved refresh token is enough.
+Prefer headless? Set credentials for the first run instead (read from the
+environment, never argv); the saved refresh token is reused after that:
+
+```bash
+export OUTNOTE_USER=you@school.ch OUTNOTE_PASSWORD=... OUTNOTE_TOTP=BASE32
+outnote --text chats --unread
+```
+
+Add `--browser` to any command to sign in interactively on the spot.
