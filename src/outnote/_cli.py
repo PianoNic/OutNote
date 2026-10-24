@@ -10,27 +10,30 @@ import json
 import os
 import sys
 
-from entrance import LoginFailed, TokenError
+from entrance import DeviceCodeError, LoginFailed, TokenError
 
 from ._auth import authenticate
 from ._base import GraphError
 from ._text import message_text
 
 _SIGNIN_HELP = """Not signed in. Do one of:
-  - sign in in your browser (easiest):   outnote signin
+  - sign in (easiest):   outnote signin
+      shows a short code to enter at https://login.microsoft.com/device
   - or set credentials (first run only):
       OUTNOTE_USER / OUTNOTE_PASSWORD / OUTNOTE_TOTP   (set on Windows, export on POSIX)
 Either way a refresh token is saved (OUTNOTE_FRT, default .ms_frt), so later runs
-need neither. You can also add --browser to any command."""
+need neither. `outnote signin --browser` signs in in a browser instead."""
 
 
-def _client(browser=False):
+def _client(device=False, browser=False):
     return authenticate(
         os.environ.get("OUTNOTE_USER"),
         os.environ.get("OUTNOTE_PASSWORD"),
         totp_secret=os.environ.get("OUTNOTE_TOTP"),
         cookies=os.environ.get("OUTNOTE_COOKIES", ".ms_session.json"),
         frt_store=os.environ.get("OUTNOTE_FRT", ".ms_frt"),
+        device=device,
+        open_browser=device,  # also open the device page automatically
         interactive="always" if browser else False,
     )
 
@@ -85,17 +88,13 @@ def _text(cmd, data, note):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="outnote", description="Microsoft 365 over Graph.")
     ap.add_argument("--text", action="store_true", help="readable output instead of JSON")
-    ap.add_argument(
-        "--browser",
-        action="store_true",
-        help="sign in in a browser (no OUTNOTE_USER/PASSWORD needed)",
-    )
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser(
+    p = sub.add_parser(
         "signin",
         aliases=["login"],
-        help="sign in in a browser and save the session for later runs",
+        help="sign in (device code by default, or --browser) and save the session",
     )
+    p.add_argument("--browser", action="store_true", help="sign in in a browser instead")
     sub.add_parser("me")
     p = sub.add_parser("mail")
     p.add_argument("--folder", default="inbox")
@@ -123,9 +122,11 @@ def main(argv=None):
     a = ap.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     signin = a.cmd in ("signin", "login")
+    browser = getattr(a, "browser", False)
 
     try:
-        note = _client(browser=a.browser or signin)
+        # `signin` defaults to the device code flow; --browser switches to a browser.
+        note = _client(device=signin and not browser, browser=browser)
     except LoginFailed:
         print(_SIGNIN_HELP, file=sys.stderr)
         return 2
@@ -133,6 +134,9 @@ def main(argv=None):
         print(f"Sign-in failed: {e}", file=sys.stderr)
         if e.error in ("invalid_grant", "interaction_required"):
             print("\n" + _SIGNIN_HELP, file=sys.stderr)
+        return 2
+    except DeviceCodeError as e:
+        print(f"Sign-in failed: {e}", file=sys.stderr)
         return 2
 
     if signin:

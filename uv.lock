@@ -386,15 +386,15 @@ wheels = [
 
 [[package]]
 name = "ms-entrance"
-version = "1.3.0"
+version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "curl-cffi" },
     { name = "pyotp" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/db/3166fb174546c22cc721baa56867b9778c7c530d024f117fb1a9c09b7075/ms_entrance-1.3.0.tar.gz", hash = "sha256:cb005405fd321c6478e68122ff9b069cef21f8ca1ef9b95b5d987d6202010d5e", size = 20755, upload-time = "2026-10-24T09:51:16.381Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/22/f7/583e81c54014b408f8595781b07f33c871901a80b2512cc5a3ef9acf3a16/ms_entrance-1.4.0.tar.gz", hash = "sha256:77fdddc2a5c35a137ff32d5afebe71221c5024ec0f6902bd54e9b01f558922e0", size = 22331, upload-time = "2026-10-24T10:23:09.098Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/2c/d1def1f0014c03fc8fcd49fc6834f50cacd18d76a8e4cf444d52d659d94a/ms_entrance-1.3.0-py3-none-any.whl", hash = "sha256:9bbd15ceec161a01602beabe2376b11a4a8973ae14507760255309f47b0ad86e", size = 23786, upload-time = "2026-10-24T09:51:15.343Z" },
+    { url = "https://files.pythonhosted.org/packages/18/9b/94ea393cd04e8e31612dd5f9d52c52bed42e5ede20ac58ab450559cbb40d/ms_entrance-1.4.0-py3-none-any.whl", hash = "sha256:f2909924a54c822a78f1b9657bfda4645c003fda06e6c285450827421711bc0b", size = 26085, upload-time = "2026-10-24T10:23:08.056Z" },
 ]
 
 [[package]]
@@ -475,7 +475,7 @@ wheels = [
 
 [[package]]
 name = "outnote"
-version = "0.1.1"
+version = "1.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "ms-entrance" },
@@ -495,7 +495,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ms-entrance", specifier = ">=1.3" },
+    { name = "ms-entrance", specifier = ">=1.4" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=4" },
 ]
 provides-extras = ["pdf"]
