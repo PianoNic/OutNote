@@ -47,7 +47,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "ms-entrance>=1.3",
+    "ms-entrance>=1.4",
 ]
 
 [project.optional-dependencies]

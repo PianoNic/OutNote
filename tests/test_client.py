@@ -440,7 +440,7 @@ def test_extract_text_docx_pptx_unknown():
 def test_cli_text_rendering(monkeypatch, capsys):
     fake = outnote.OutNote("tok")
     monkeypatch.setattr(fake, "me", lambda: {"displayName": "N", "mail": "n@x.ch"})
-    monkeypatch.setattr(_cli, "_client", lambda browser=False: fake)
+    monkeypatch.setattr(_cli, "_client", lambda device=False, browser=False: fake)
     assert _cli.main(["--text", "me"]) == 0
     assert capsys.readouterr().out.strip() == "N <n@x.ch>"
 
@@ -448,7 +448,7 @@ def test_cli_text_rendering(monkeypatch, capsys):
 def test_cli_not_signed_in_prints_help_not_traceback(monkeypatch, capsys):
     from entrance import LoginFailed
 
-    def no_creds(browser=False):
+    def no_creds(device=False, browser=False):
         raise LoginFailed("nope")
 
     monkeypatch.setattr(_cli, "_client", no_creds)
@@ -458,15 +458,31 @@ def test_cli_not_signed_in_prints_help_not_traceback(monkeypatch, capsys):
     assert "Traceback" not in err
 
 
-def test_cli_signin_uses_browser_and_confirms(monkeypatch, capsys):
+def test_cli_signin_defaults_to_device_code(monkeypatch, capsys):
     fake = outnote.OutNote("tok")
     monkeypatch.setattr(fake, "me", lambda: {"displayName": "N", "userPrincipalName": "n@x.ch"})
     seen = {}
-    monkeypatch.setattr(_cli, "_client", lambda browser=False: seen.update(browser=browser) or fake)
+    monkeypatch.setattr(
+        _cli,
+        "_client",
+        lambda device=False, browser=False: seen.update(device=device, browser=browser) or fake,
+    )
     assert _cli.main(["login"]) == 0  # alias for signin
-    assert seen["browser"] is True  # browser sign-in forced
-    out = capsys.readouterr().out
-    assert "Signed in as N <n@x.ch>" in out
+    assert seen == {"device": True, "browser": False}  # device code by default
+    assert "Signed in as N <n@x.ch>" in capsys.readouterr().out
+
+
+def test_cli_signin_browser_flag_uses_browser(monkeypatch, capsys):
+    fake = outnote.OutNote("tok")
+    monkeypatch.setattr(fake, "me", lambda: {"displayName": "N", "userPrincipalName": "n@x.ch"})
+    seen = {}
+    monkeypatch.setattr(
+        _cli,
+        "_client",
+        lambda device=False, browser=False: seen.update(device=device, browser=browser) or fake,
+    )
+    assert _cli.main(["signin", "--browser"]) == 0
+    assert seen == {"device": False, "browser": True}
 
 
 # --- fixes found by watching the Teams web client --------------------------------

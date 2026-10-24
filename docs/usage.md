@@ -88,11 +88,12 @@ note.create_task(list_id, "Hand in essay", due=friday)
 
 ## CLI
 
-Sign in once - a browser opens for the full login (email, password, 2FA), and the
-session is saved so later commands need nothing:
+Sign in once - `outnote signin` shows a short code to enter at
+`https://login.microsoft.com/device` (no redirect, no copy-paste); after that the
+session is saved and later commands need nothing:
 
 ```bash
-outnote signin          # or: outnote login
+outnote signin          # or: outnote login  (device code; --browser for a browser)
 outnote --text chats --unread
 outnote --text mail --unread
 outnote --text events
@@ -107,5 +108,3 @@ environment, never argv); the saved refresh token is reused after that:
 export OUTNOTE_USER=you@school.ch OUTNOTE_PASSWORD=... OUTNOTE_TOTP=BASE32
 outnote --text chats --unread
 ```
-
-Add `--browser` to any command to sign in interactively on the spot.
