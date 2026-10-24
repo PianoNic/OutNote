@@ -1,11 +1,8 @@
 """Smoke tests: public surface, URL building, pagination, PKCE, broker routing.
 No network."""
 
-import base64
-import hashlib
-
 import outnote
-from outnote import _auth, _graph
+from outnote import _graph
 
 
 def test_public_surface():
@@ -86,10 +83,3 @@ def test_search_builds_query_and_unwraps_hits(monkeypatch):
     assert captured["body"]["requests"][0]["entityTypes"] == ["driveItem"]
     assert captured["body"]["requests"][0]["query"]["queryString"] == "budget"
     assert captured["client"] == _graph.C_OFFICE
-
-
-def test_pkce_is_valid_s256():
-    v, ch = _auth._pkce()
-    expect = base64.urlsafe_b64encode(hashlib.sha256(v.encode()).digest()).rstrip(b"=")
-    assert ch == expect.decode()
-    assert "=" not in v and "=" not in ch

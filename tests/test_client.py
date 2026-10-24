@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import pytest
 
 import outnote
-from outnote import _auth, _base, _broker, _cli
+from outnote import _base, _cli
 from outnote._text import extract_text, html_to_text, message_text
 
 ME = "11111111-1111-1111-1111-111111111111"
@@ -162,48 +162,7 @@ def test_delta_follows_to_deltalink(monkeypatch):
     assert urls[0].endswith("/me/mailFolders/inbox/messages/delta")
 
 
-# --- broker / persistence -------------------------------------------------------
-def test_write_secret_is_atomic_and_private(tmp_path):
-    p = tmp_path / "frt"
-    _broker.write_secret(str(p), "one")
-    _broker.write_secret(str(p), "two")
-    assert _broker.read_secret(str(p)) == "two"
-    assert [f.name for f in tmp_path.iterdir()] == ["frt"]  # no temp file left behind
-    assert _broker.read_secret(str(tmp_path / "missing")) is None
-
-
-def test_broker_persists_rotated_token(monkeypatch, tmp_path):
-    store = str(tmp_path / "frt")
-    monkeypatch.setattr(
-        _broker,
-        "_post_token",
-        lambda url, data: {"access_token": "at", "refresh_token": "rotated", "expires_in": 3600},
-    )
-    b = _broker.Broker("orig", store=store)
-    assert b("client") == "at"
-    assert _broker.read_secret(store) == "rotated" and b.refresh_token == "rotated"
-
-
-def test_authenticate_reuses_store_without_login(monkeypatch, tmp_path):
-    store = tmp_path / "frt"
-    store.write_text("saved")
-    monkeypatch.setattr(_broker, "_post_token", lambda url, data: {"access_token": "at"})
-    note = _auth.authenticate(frt_store=str(store))  # entrance is never called
-    assert note._tp(outnote.C_OFFICE) == "at"
-
-
-def test_authenticate_drops_dead_store(monkeypatch, tmp_path):
-    store = tmp_path / "frt"
-    store.write_text("dead")
-    monkeypatch.setattr(
-        _broker,
-        "_post_token",
-        lambda url, data: {"error": "invalid_grant", "error_description": "expired"},
-    )
-    assert _auth._from_store(str(store), "common") is None
-    assert not store.exists()
-
-
+# --- from_refresh_token (OutNote API; the Broker lives in entrance now) ------
 def test_from_refresh_token():
     note = outnote.OutNote.from_refresh_token("frt")
     assert note.token is None and callable(note._tp)
@@ -501,19 +460,6 @@ def test_scoped_token_needs_a_broker():
     assert note._token(outnote.C_OFFICE, "api://x/.default") == "t" and seen == ["api://x/.default"]
     with pytest.raises(ValueError):
         outnote.OutNote("static")._token(outnote.C_OFFICE, "api://x/.default")
-
-
-def test_broker_caches_per_scope(monkeypatch):
-    scopes = []
-    monkeypatch.setattr(
-        _broker,
-        "_post_token",
-        lambda url, data: scopes.append(data["scope"]) or {"access_token": data["scope"]},
-    )
-    b = _broker.Broker("frt")
-    assert b("c") == _broker.GRAPH_SCOPE and b("c", "api://x/.default") == "api://x/.default"
-    b("c")
-    assert scopes == [_broker.GRAPH_SCOPE, "api://x/.default"]
 
 
 def test_presence_routes_to_officehome(note):
