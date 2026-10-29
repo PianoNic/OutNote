@@ -11,6 +11,39 @@ def test_public_surface():
     assert outnote.OutNote("tok").token == "tok"
 
 
+def test_push_surface_is_re_exported():
+    assert callable(outnote.push_login)
+    assert issubclass(outnote.PushError, Exception)
+    for state in ("NUMBER_MATCHING", "PENDING", "APPROVED", "DENIED", "TIMED_OUT"):
+        assert isinstance(getattr(outnote, state), str)
+
+
+def test_authenticate_forwards_push_to_foci_login(monkeypatch):
+    from outnote import _auth
+
+    captured = {}
+
+    class FakeBroker:
+        refresh_token = "frt"
+
+        def __call__(self, client_id, scope=None):
+            return "token"
+
+    monkeypatch.setattr(
+        _auth, "foci_login", lambda *a, **k: captured.update(a=a, k=k) or FakeBroker()
+    )
+    cb = lambda ev: None  # noqa: E731
+    note = _auth.authenticate(
+        "you@school.ch", "pw", push=True, on_push=cb, push_timeout=30, push_interval=1
+    )
+
+    assert isinstance(note, outnote.OutNote)
+    assert captured["k"]["push"] is True
+    assert captured["k"]["on_push"] is cb
+    assert captured["k"]["push_timeout"] == 30
+    assert captured["k"]["push_interval"] == 1
+
+
 def test_token_required():
     try:
         outnote.OutNote("")
