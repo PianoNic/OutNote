@@ -175,6 +175,40 @@ class Transport:
         req = Request(self._url(path, params), data=data, headers=h, method=method)
         return self._send(req, raw)
 
+    def redirect(self, path, params=None, client=C_OFFICE, timeout=_TIMEOUT):
+        """GET `path` without following redirects and return the `Location` it
+        points to. Graph answers some downloads (format conversions) with a 302
+        to a short-lived pre-authenticated URL; that URL needs no Bearer token,
+        so the caller can stream it however it likes."""
+        h = {"Authorization": f"Bearer {self._token(client)}"}
+        url = self._url(path, params)
+        for attempt in range(_RETRIES + 1):
+            try:
+                r = http_client().request(
+                    "GET",
+                    url,
+                    headers=h,
+                    timeout=httpx.Timeout(timeout, connect=min(5.0, timeout)),
+                    follow_redirects=False,
+                )
+            except httpx.HTTPError as e:
+                raise URLError(e) from None
+            if r.status_code in _RETRY_STATUS and attempt < _RETRIES:
+                time.sleep(_retry_after(r.headers, attempt))
+                continue
+            location = r.headers.get("Location")
+            if 300 <= r.status_code < 400 and location:
+                return location
+            detail = r.text
+            try:
+                detail = json.loads(detail)["error"]["message"]
+            except (ValueError, KeyError, TypeError):
+                pass
+            if r.status_code < 400:
+                detail = f"expected a redirect, got {r.status_code}"
+            raise GraphError(r.status_code, detail)
+        raise AssertionError("unreachable")
+
     def _token(self, client, scope=None):
         if scope is None:
             return self._tp(client)

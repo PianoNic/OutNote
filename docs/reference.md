@@ -18,7 +18,7 @@ Verified end-to-end against a live locked-down EDU tenant.
 | Channel posting | `send_channel_message(t, c, text)`, `reply_to_channel_message(t, c, m, text)` | `/teams/{t}/channels/{c}/messages` |
 | Shared in messages | `message_images(m, chat_id=)`, `message_files(msg)`, `download_shared(url)` | `hostedContents`, `/shares/u!{url}` |
 | Meetings | `meeting_chat_messages(event)`, `meeting_thread_id(event)`, `online_meeting(url)`\*, `transcripts(id)`\* | thread id parsed from the join URL |
-| OneDrive | `files(path)`, `file(id)`, `download(id)`, `download_url(id)`, `upload(src, dest)`, `delete_file(id)` | `/me/drive/...` |
+| OneDrive | `files(path)`, `file(id)`, `download(id)`, `download_url(id)`, `upload(src, dest, app_folder=)`, `convert(id, format=)`, `converted_url(id)`, `delete_file(id)` | `/me/drive/...` |
 | SharePoint | `sites(search)`, `followed_sites()`, `site_drive_items(id)` | `/sites`, `/me/followedSites` |
 | OneNote | `notebooks(group_id=)`, `sections`, `pages`, `page_content`, `page_text`, `page_images`, `create_page`, `append_page`, `delete_page` | `/me/onenote/...`, `/groups/{id}/onenote/...` |
 | People | `find_users(q)`, `resolve_user(name_or_upn)`, `user(id)`, `contacts()`, `photo()`, `presence()`, `presences(ids)`, `member_of()` | `/users`, `/me/presence` |
