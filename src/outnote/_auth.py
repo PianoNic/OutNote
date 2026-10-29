@@ -30,6 +30,7 @@ def authenticate(
     on_push=None,
     push_timeout=120,
     push_interval=3,
+    mfa=None,
     **login_kwargs,
 ):
     """Sign in and return an `OutNote` client wired to a token broker.
@@ -46,6 +47,13 @@ def authenticate(
         tap and the pending/approved/denied/timed-out progress, so your own UI
         can show it. `push_timeout` bounds the wait, `push_interval` paces the
         poll. Raises `outnote.PushError` if rejected or unanswered.
+      * `mfa=<MfaPrompt>` - headless password sign-in with an interactive second
+        factor: only if Microsoft asks for MFA, the prompt chooses push or an
+        authenticator code and may switch between them (see `entrance.MfaPrompt`).
+        Failures are typed: `InvalidCredentials`, `Unsupported` (federated/ADFS,
+        no usable method), `Blocked` (Conditional Access), `PushError`,
+        `OtpRejected`. `password` may be an `outnote.Secret` so no reference
+        outlives the submission. Takes precedence over `totp_secret`/`totp_code`.
     MFA: pass `totp_secret` (Base32) or `totp_code`. Extra kwargs pass through
     to `entrance.login`.
     """
@@ -66,6 +74,7 @@ def authenticate(
         on_push=on_push,
         push_timeout=push_timeout,
         push_interval=push_interval,
+        mfa=mfa,
         **login_kwargs,
     )
     return OutNote(broker)
