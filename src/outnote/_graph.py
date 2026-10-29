@@ -3,7 +3,7 @@ OneNote, people, tasks, Planner and Education.
 
 Each method routes to the pre-consented first-party client whose token carries
 the scope it needs (see `authenticate` / the README token map). Graph is just
-HTTP + Bearer + JSON, so this leans on stdlib urllib. Methods that change the
+HTTP + Bearer + JSON, so this leans on one shared keep-alive httpx client. Methods that change the
 account (send, create, update, delete) say so in their docstrings.
 """
 

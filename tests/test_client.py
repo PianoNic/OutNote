@@ -7,6 +7,7 @@ import json
 import zipfile
 from datetime import datetime, timezone
 
+import httpx
 import pytest
 
 import outnote
@@ -517,3 +518,53 @@ def test_meeting_thread_id_from_join_url(note):
     note.rec.answers[("GET", "https://graph.microsoft.com/v1.0/me/chats/")] = {"value": []}
     note.meeting_chat_messages(event)
     assert "me/chats/19:meeting_abc@thread.v2/messages" in note.rec.calls[-1]["path"]
+
+
+# --- shared keep-alive client ---------------------------------------------------
+def _mock_shared_client(monkeypatch, handler):
+    import entrance._http as shared
+
+    c = httpx.Client(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(shared, "_client", c)
+    return c
+
+
+def test_requests_share_one_client_and_follow_redirects(monkeypatch):
+    seen = []
+
+    def handler(req):
+        seen.append((req.method, str(req.url), req.headers.get("authorization")))
+        if req.url.host == "graph.microsoft.com" and req.url.path.endswith("/content"):
+            return httpx.Response(302, headers={"location": "https://files.example/x"})
+        return httpx.Response(200, content=b"bytes")
+
+    _mock_shared_client(monkeypatch, handler)
+    c = outnote.OutNote("tok")
+    assert c.get("me/drive/items/1/content", raw="bytes") == b"bytes"
+    assert seen[0][2] == "Bearer tok"
+    assert seen[1][1] == "https://files.example/x"
+    assert seen[1][2] is None  # the Bearer token is not forwarded to another host
+
+
+def test_http_errors_keep_graph_error_and_retry_semantics(monkeypatch):
+    calls = []
+
+    def handler(req):
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(503, headers={"Retry-After": "0"}, json={})
+        return httpx.Response(404, json={"error": {"message": "gone"}})
+
+    _mock_shared_client(monkeypatch, handler)
+    with pytest.raises(outnote.GraphError, match="404.*gone"):
+        outnote.OutNote("tok").get("me/messages/1")
+    assert len(calls) == 2
+
+
+def test_connection_failure_is_a_url_error(monkeypatch):
+    def handler(req):
+        raise httpx.ConnectTimeout("no route")
+
+    _mock_shared_client(monkeypatch, handler)
+    with pytest.raises(OSError):
+        outnote.OutNote("tok").get("me")
