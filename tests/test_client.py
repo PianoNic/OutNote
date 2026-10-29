@@ -568,3 +568,66 @@ def test_connection_failure_is_a_url_error(monkeypatch):
     _mock_shared_client(monkeypatch, handler)
     with pytest.raises(OSError):
         outnote.OutNote("tok").get("me")
+
+
+# --- conversion and the app folder ----------------------------------------------
+class FakeHttp:
+    """Stands in for Entrance's shared httpx client: answers each request in turn."""
+
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def request(self, method, url, **kw):
+        self.calls.append({"method": method, "url": url, **kw})
+        return self.responses.pop(0)
+
+
+def test_redirect_returns_location_without_following(monkeypatch):
+    fake = FakeHttp(httpx.Response(302, headers={"Location": "https://dl.test/x.pdf"}))
+    monkeypatch.setattr(_base, "http_client", lambda: fake)
+    c = outnote.OutNote("tok")
+    assert c.converted_url("ITEM!1") == "https://dl.test/x.pdf"
+    call = fake.calls[0]
+    assert call["follow_redirects"] is False
+    assert call["url"] == _base.GRAPH + "/me/drive/items/ITEM!1/content?format=pdf"
+    assert call["headers"]["Authorization"] == "Bearer tok"
+
+
+def test_redirect_retries_throttling_and_raises_graph_errors(monkeypatch):
+    fake = FakeHttp(
+        httpx.Response(429, headers={"Retry-After": "0"}),
+        httpx.Response(406, json={"error": {"message": "not convertible"}}),
+    )
+    monkeypatch.setattr(_base, "http_client", lambda: fake)
+    monkeypatch.setattr(_base.time, "sleep", lambda s: None)
+    c = outnote.OutNote("tok")
+    with pytest.raises(outnote.GraphError) as err:
+        c.converted_url("i", drive_id="d")
+    assert err.value.status == 406 and "not convertible" in str(err.value)
+    assert fake.calls[1]["url"].startswith(_base.GRAPH + "/drives/d/items/i/content")
+
+
+def test_redirect_refuses_a_plain_answer(monkeypatch):
+    monkeypatch.setattr(_base, "http_client", lambda: FakeHttp(httpx.Response(200, content=b"x")))
+    with pytest.raises(outnote.GraphError):
+        outnote.OutNote("tok").converted_url("i")
+
+
+def test_convert_fetches_the_converted_bytes(monkeypatch):
+    c = outnote.OutNote("tok")
+    monkeypatch.setattr(
+        c, "converted_url", lambda item, fmt, drive: f"https://dl.test/{item}.{fmt}"
+    )
+    seen = {}
+    monkeypatch.setattr(
+        "outnote._files.fetch", lambda url, timeout: seen.update(url=url) or b"%PDF-1.7"
+    )
+    assert c.convert("abc") == b"%PDF-1.7"
+    assert seen["url"] == "https://dl.test/abc.pdf"
+
+
+def test_upload_to_the_app_folder(note):
+    note.rec.answers[("PUT", "me/drive/special/approot:")] = {"id": "new"}
+    assert note.upload(b"hi", "tmp/a.docx", app_folder=True) == {"id": "new"}
+    assert note.rec.calls[-1]["path"].startswith("me/drive/special/approot:/tmp/a.docx:/content")

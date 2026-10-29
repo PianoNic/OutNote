@@ -10,6 +10,7 @@ from ._text import html_to_text
 
 _SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024  # Graph's limit for a single PUT
 _CHUNK = 10 * 320 * 1024  # upload-session chunks must be multiples of 320 KiB
+_CONVERT_TIMEOUT = 120  # seconds; Graph converts before it answers
 
 
 def _item_base(item_id, drive_id=None):
@@ -48,6 +49,21 @@ class FilesMixin(Transport):
             raise ValueError(f"item {item_id} has no content (a folder?)")
         return _write(dest, fetch(url))
 
+    def converted_url(self, item_id, format="pdf", drive_id=None):
+        """A short-lived pre-authenticated URL of a drive item converted to
+        `format` (Graph's `content?format=`; "pdf" takes Word, Excel,
+        PowerPoint, OpenDocument, RTF and CSV files). Raises `GraphError`
+        (406/415) for a file Graph can't convert."""
+        return self.redirect(
+            f"{_item_base(item_id, drive_id)}/content", {"format": format}, timeout=_CONVERT_TIMEOUT
+        )
+
+    def convert(self, item_id, format="pdf", drive_id=None, dest=None):
+        """A drive item's bytes converted to `format` (also written to `dest`
+        if given). See `converted_url`."""
+        url = self.converted_url(item_id, format, drive_id)
+        return _write(dest, fetch(url, timeout=_CONVERT_TIMEOUT))
+
     def download_shared(self, url, dest=None):
         """Bytes behind a SharePoint/OneDrive sharing or content URL — e.g. a
         file attached to a Teams message (`message_files`)."""
@@ -55,16 +71,21 @@ class FilesMixin(Transport):
         item = self.get(f"shares/u!{token}/driveItem")
         return _write(dest, fetch(item["@microsoft.graph.downloadUrl"]))
 
-    def upload(self, src, dest_path, drive_id=None, conflict="replace"):
+    def upload(self, src, dest_path, drive_id=None, conflict="replace", app_folder=False):
         """Upload a local file path or bytes to `dest_path` ('Folder/name.txt'
-        relative to the drive root). Small files go up in one PUT, larger ones
-        through a resumable upload session. Returns the driveItem."""
+        relative to the drive root, or to the app's own folder with
+        `app_folder=True`, Graph's `special/approot`). Small files go up in
+        one PUT, larger ones through a resumable upload session. Returns the
+        driveItem."""
         if isinstance(src, (str, os.PathLike)):
             with open(src, "rb") as f:
                 data = f.read()
         else:
             data = bytes(src)
-        root = f"drives/{drive_id}/root" if drive_id else "me/drive/root"
+        if app_folder:
+            root = f"drives/{drive_id}/special/approot" if drive_id else "me/drive/special/approot"
+        else:
+            root = f"drives/{drive_id}/root" if drive_id else "me/drive/root"
         target = f"{root}:/{dest_path.lstrip('/')}:"
         if len(data) <= _SIMPLE_UPLOAD_MAX:
             return self.put(f"{target}/content?@microsoft.graph.conflictBehavior={conflict}", data)
