@@ -14,9 +14,36 @@ note = authenticate(
 
 The first call saves `.ms_frt` (the FOCI family refresh token, mode 0600) and
 `.ms_session.json` (sign-in cookies); every run after that skips the password
-and MFA. Push / number-matching MFA can't be done headless - pass
+and MFA. For an interactive second factor pass `mfa=` (see below), or
 `interactive=True` to finish the first sign-in in a browser, or enroll a TOTP
 device once (see [`entrance`](https://github.com/PianoNic/Entrance)).
+
+### Interactive MFA
+
+`mfa=<MfaPrompt>` lets your UI pick the second factor only when Microsoft asks for
+it: a number-matching push (`on_push` receives the number to tap) or a code from an
+authenticator app (`otp(attempt)`, up to 3 tries), with a way to switch mid-way:
+
+```python
+from outnote import authenticate, MfaPrompt, Secret
+
+
+class Prompt(MfaPrompt):
+    def choose(self, methods):  # ["push", "otp"], only what the account offers
+        return methods[0]
+
+    def on_push(self, event):  # PushEvent: show event.number
+        ...
+    def otp(self, attempt):  # block until the user types a code
+        return input("Code: ")
+
+
+note = authenticate("you@school.ch", Secret("password"), mfa=Prompt(), frt_store=None, cookies=None)
+```
+
+Wrong password raises `InvalidCredentials`; federated/ADFS or no usable method
+`Unsupported`; Conditional Access `Blocked`; a denied or timed-out push
+`PushError`. Details: [Entrance docs](https://github.com/PianoNic/Entrance/blob/main/docs/mfa.md).
 
 Already have a refresh token? `OutNote.from_refresh_token(frt)`. Already have a
 Graph **access token** (MSAL, a browser session)? `OutNote(access_token)` - but a

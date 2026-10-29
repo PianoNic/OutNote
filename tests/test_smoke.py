@@ -18,6 +18,39 @@ def test_push_surface_is_re_exported():
         assert isinstance(getattr(outnote, state), str)
 
 
+def test_mfa_surface_is_re_exported():
+    assert issubclass(outnote.MfaPrompt, object) and callable(outnote.Secret)
+    for name in ("InvalidCredentials", "Unsupported", "FederatedAccount", "Blocked", "OtpRejected"):
+        assert issubclass(getattr(outnote, name), Exception)
+    assert issubclass(outnote.UnsupportedMfa, outnote.Unsupported)
+
+
+def test_authenticate_forwards_mfa_and_keeps_push(monkeypatch):
+    from outnote import _auth
+
+    captured = {}
+
+    class FakeBroker:
+        refresh_token = "frt"
+
+        def __call__(self, client_id, scope=None):
+            return "token"
+
+    monkeypatch.setattr(
+        _auth, "foci_login", lambda *a, **k: captured.update(a=a, k=k) or FakeBroker()
+    )
+    prompt = outnote.MfaPrompt()
+    secret = outnote.Secret("pw")
+    note = _auth.authenticate("you@school.ch", secret, mfa=prompt, frt_store=None, cookies=None)
+
+    assert isinstance(note, outnote.OutNote)
+    assert captured["k"]["mfa"] is prompt
+    assert captured["a"] == ("you@school.ch", secret)
+    assert captured["k"]["push"] is False  # push pass-through (#35) still defaults off
+    _auth.authenticate("u", "pw")
+    assert captured["k"]["mfa"] is None
+
+
 def test_authenticate_forwards_push_to_foci_login(monkeypatch):
     from outnote import _auth
 
