@@ -1,11 +1,19 @@
-"""Graph transport: GET/POST/PATCH/PUT/DELETE + Bearer + JSON over stdlib
-urllib, with 429/503 backoff, nextLink paging, $batch and delta."""
+"""Graph transport: GET/POST/PATCH/PUT/DELETE + Bearer + JSON over one shared
+keep-alive HTTP client (Entrance's), with 429/503 backoff, nextLink paging,
+$batch and delta."""
 
+import io
 import json
+import logging
 import time
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+import httpx
+from entrance import http_client
+
+log = logging.getLogger("outnote.http")
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 _MAX_PAGES = 50  # ponytail: hard stop so follow-the-nextLink can't loop forever
@@ -34,6 +42,53 @@ class GraphError(RuntimeError):
 def _retry_after(headers, attempt):
     ra = (headers or {}).get("Retry-After")
     return float(ra) if ra and str(ra).replace(".", "", 1).isdigit() else 2**attempt
+
+
+class _Response:
+    def __init__(self, body):
+        self._body = body
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def urlopen(req, timeout=_TIMEOUT):
+    """Send a urllib `Request` over the shared client. Mirrors urllib's contract: a response with
+    `.read()`, `HTTPError` for 4xx/5xx and `URLError` for connection failures. Connecting is
+    bounded to 5 s so an unreachable address fails over quickly instead of eating the read timeout."""
+    t0 = time.perf_counter()
+    status = "error"
+    try:
+        r = http_client().request(
+            req.get_method(),
+            req.full_url,
+            content=req.data,
+            headers=dict(req.header_items()),
+            timeout=httpx.Timeout(timeout, connect=min(5.0, timeout)),
+            follow_redirects=True,
+        )
+        status = r.status_code
+    except httpx.HTTPError as e:
+        raise URLError(e) from None
+    finally:
+        log.debug(
+            "%s %s -> %s in %.0f ms",
+            req.get_method(),
+            req.full_url.split("?")[0],
+            status,
+            (time.perf_counter() - t0) * 1000,
+        )
+    if r.status_code >= 400:
+        raise HTTPError(
+            req.full_url, r.status_code, r.reason_phrase, r.headers, io.BytesIO(r.content)
+        )  # type: ignore[arg-type]
+    return _Response(r.content)
 
 
 def fetch(url, timeout=_TIMEOUT):
