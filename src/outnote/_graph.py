@@ -3,7 +3,7 @@ OneNote, people, tasks, Planner and Education.
 
 Each method routes to the pre-consented first-party client whose token carries
 the scope it needs (see `authenticate` / the README token map). Graph is just
-HTTP + Bearer + JSON, so this leans on one shared keep-alive httpx client. Methods that change the
+HTTP + Bearer + JSON, so this leans on one shared keep-alive HTTP client. Methods that change the
 account (send, create, update, delete) say so in their docstrings.
 """
 
@@ -12,8 +12,10 @@ from ._base import (
     _RETRIES,
     _TIMEOUT,
     C_OFFICE,
+    C_OFFICEHOME,
     C_ONENOTE,
     C_SITES,
+    C_TEAMS,
     GRAPH,
     GraphError,
 )
@@ -28,8 +30,10 @@ from ._work import _SEARCH_CLIENT, C_EDU, EducationMixin, SearchMixin, TasksMixi
 __all__ = [
     "GRAPH",
     "C_OFFICE",
+    "C_OFFICEHOME",
     "C_ONENOTE",
     "C_SITES",
+    "C_TEAMS",
     "C_EDU",
     "GraphError",
     "OutNote",

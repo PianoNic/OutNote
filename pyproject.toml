@@ -7,7 +7,7 @@ name = "outnote"
 version = "1.5.0"
 description = "Headless Microsoft 365 client - mail, calendar, Teams, OneDrive, SharePoint and OneNote over Graph, no app registration."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
   { name = "PianoNic", email = "contact@pianonic.ch" },
 ]
@@ -37,7 +37,6 @@ classifiers = [
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -47,7 +46,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "ms-entrance>=1.7",
+    "ms-entrance>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -76,13 +75,13 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501", "E731", "B008"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 ignore_missing_imports = true
 files = ["src/outnote"]

@@ -42,7 +42,16 @@ from entrance import (
 
 from ._auth import OFFICEHOME, authenticate
 from ._broker import TokenError
-from ._graph import C_EDU, C_OFFICE, C_ONENOTE, C_SITES, GraphError, OutNote
+from ._graph import (
+    C_EDU,
+    C_OFFICE,
+    C_OFFICEHOME,
+    C_ONENOTE,
+    C_SITES,
+    C_TEAMS,
+    GraphError,
+    OutNote,
+)
 from ._text import extract_text, html_to_text, message_text
 
 __all__ = [
@@ -55,8 +64,10 @@ __all__ = [
     "message_text",
     "OFFICEHOME",
     "C_OFFICE",
+    "C_OFFICEHOME",
     "C_ONENOTE",
     "C_SITES",
+    "C_TEAMS",
     "C_EDU",
     "push_login",
     "PushEvent",

@@ -2,13 +2,16 @@
 No network - requests are captured instead of sent."""
 
 import base64
+import http.server
 import io
 import json
+import socket
+import threading
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import httpx
 import pytest
+from entrance._http import Headers, Response
 
 import outnote
 from outnote import _base, _cli
@@ -218,7 +221,7 @@ def test_download_attachment_decodes(note):
 def test_create_event_payload(note):
     note.create_event(
         "Test",
-        datetime(2026, 1, 1, 10, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, tzinfo=UTC),
         "2026-01-01T11:00:00",
         attendees="a@b.ch",
         online=True,
@@ -521,58 +524,71 @@ def test_meeting_thread_id_from_join_url(note):
 
 
 # --- shared keep-alive client ---------------------------------------------------
-def _mock_shared_client(monkeypatch, handler):
-    import entrance._http as shared
+class _GraphHandler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
 
-    c = httpx.Client(transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(shared, "_client", c)
-    return c
+    def do_GET(self):
+        srv = self.server
+        srv.seen.append((self.path, self.headers.get("Authorization")))
+        status, body, headers = 200, b"bytes", {}
+        if self.path.endswith("/content"):
+            port = srv.server_address[1]
+            status, headers = 302, {"Location": f"http://localhost:{port}/x"}
+        elif self.path.endswith("/throttled-then-gone"):
+            if len(srv.seen) == 1:
+                status, body, headers = 503, b"{}", {"Retry-After": "0"}
+            else:
+                status, body = 404, b'{"error":{"message":"gone"}}'
+        self.send_response(status)
+        for k, v in headers.items():
+            self.send_header(k, v)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
 
 
-def test_requests_share_one_client_and_follow_redirects(monkeypatch):
-    seen = []
+@pytest.fixture
+def graph_server():
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _GraphHandler)
+    srv.daemon_threads = True
+    srv.seen = []
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield srv
+    srv.shutdown()
+    srv.server_close()
 
-    def handler(req):
-        seen.append((req.method, str(req.url), req.headers.get("authorization")))
-        if req.url.host == "graph.microsoft.com" and req.url.path.endswith("/content"):
-            return httpx.Response(302, headers={"location": "https://files.example/x"})
-        return httpx.Response(200, content=b"bytes")
 
-    _mock_shared_client(monkeypatch, handler)
-    c = outnote.OutNote("tok")
+def _client_for(srv):
+    return outnote.OutNote("tok", base=f"http://127.0.0.1:{srv.server_address[1]}")
+
+
+def test_requests_follow_redirects_without_leaking_the_token(graph_server):
+    c = _client_for(graph_server)
     assert c.get("me/drive/items/1/content", raw="bytes") == b"bytes"
-    assert seen[0][2] == "Bearer tok"
-    assert seen[1][1] == "https://files.example/x"
-    assert seen[1][2] is None  # the Bearer token is not forwarded to another host
+    assert graph_server.seen[0] == ("/me/drive/items/1/content", "Bearer tok")
+    assert graph_server.seen[1] == ("/x", None)  # not forwarded to another host
 
 
-def test_http_errors_keep_graph_error_and_retry_semantics(monkeypatch):
-    calls = []
-
-    def handler(req):
-        calls.append(1)
-        if len(calls) == 1:
-            return httpx.Response(503, headers={"Retry-After": "0"}, json={})
-        return httpx.Response(404, json={"error": {"message": "gone"}})
-
-    _mock_shared_client(monkeypatch, handler)
+def test_http_errors_keep_graph_error_and_retry_semantics(graph_server):
     with pytest.raises(outnote.GraphError, match="404.*gone"):
-        outnote.OutNote("tok").get("me/messages/1")
-    assert len(calls) == 2
+        _client_for(graph_server).get("throttled-then-gone")
+    assert len(graph_server.seen) == 2
 
 
-def test_connection_failure_is_a_url_error(monkeypatch):
-    def handler(req):
-        raise httpx.ConnectTimeout("no route")
-
-    _mock_shared_client(monkeypatch, handler)
+def test_connection_failure_is_a_url_error():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
     with pytest.raises(OSError):
-        outnote.OutNote("tok").get("me")
+        outnote.OutNote("tok", base=f"http://127.0.0.1:{port}").get("me")
 
 
 # --- conversion and the app folder ----------------------------------------------
 class FakeHttp:
-    """Stands in for Entrance's shared httpx client: answers each request in turn."""
+    """Stands in for Entrance's shared HTTP client: answers each request in turn."""
 
     def __init__(self, *responses):
         self.responses = list(responses)
@@ -583,8 +599,13 @@ class FakeHttp:
         return self.responses.pop(0)
 
 
+def _resp(status, content=b"", **headers):
+    names = ((k.lower().replace("_", "-"), v) for k, v in headers.items())
+    return Response(status, Headers(names), content)
+
+
 def test_redirect_returns_location_without_following(monkeypatch):
-    fake = FakeHttp(httpx.Response(302, headers={"Location": "https://dl.test/x.pdf"}))
+    fake = FakeHttp(_resp(302, Location="https://dl.test/x.pdf"))
     monkeypatch.setattr(_base, "http_client", lambda: fake)
     c = outnote.OutNote("tok")
     assert c.converted_url("ITEM!1") == "https://dl.test/x.pdf"
@@ -596,8 +617,8 @@ def test_redirect_returns_location_without_following(monkeypatch):
 
 def test_redirect_retries_throttling_and_raises_graph_errors(monkeypatch):
     fake = FakeHttp(
-        httpx.Response(429, headers={"Retry-After": "0"}),
-        httpx.Response(406, json={"error": {"message": "not convertible"}}),
+        _resp(429, Retry_After="0"),
+        _resp(406, b'{"error": {"message": "not convertible"}}'),
     )
     monkeypatch.setattr(_base, "http_client", lambda: fake)
     monkeypatch.setattr(_base.time, "sleep", lambda s: None)
@@ -609,7 +630,7 @@ def test_redirect_retries_throttling_and_raises_graph_errors(monkeypatch):
 
 
 def test_redirect_refuses_a_plain_answer(monkeypatch):
-    monkeypatch.setattr(_base, "http_client", lambda: FakeHttp(httpx.Response(200, content=b"x")))
+    monkeypatch.setattr(_base, "http_client", lambda: FakeHttp(_resp(200, b"x")))
     with pytest.raises(outnote.GraphError):
         outnote.OutNote("tok").converted_url("i")
 

@@ -19,10 +19,10 @@ class DirectoryMixin(Transport):
             "$top": top,
             "$select": "id,displayName,mail,userPrincipalName,jobTitle,department",
         }
-        return self.list("users", params, limit=top, headers=_EVENTUAL)
+        return self._directory(self.list, "users", params, limit=top, headers=_EVENTUAL)
 
     def user(self, id_or_upn):
-        return self.get(f"users/{id_or_upn}")
+        return self._directory(self.get, f"users/{id_or_upn}")
 
     def resolve_user(self, user):
         """Exactly one directory user for `user`: a dict with an `id` passes
@@ -36,13 +36,14 @@ class DirectoryMixin(Transport):
         found = None
         if _GUID.match(user) or "@" in user:
             try:
-                found = self.get(
-                    f"users/{user}", {"$select": "id,displayName,mail,userPrincipalName"}
+                found = self._directory(
+                    self.get, f"users/{user}", {"$select": "id,displayName,mail,userPrincipalName"}
                 )
             except GraphError as e:
                 if e.status != 404:
                     raise
-                hits = self.list(
+                hits = self._directory(
+                    self.list,
                     "users",
                     {"$filter": f"mail eq '{user}'", "$select": "id,displayName,mail"},
                 )
@@ -87,7 +88,7 @@ class ProfileMixin(Transport):
 
     def member_of(self):
         """Groups, teams and directory roles you belong to."""
-        return self.list("me/memberOf", {"$top": 100})
+        return self._directory(self.list, "me/memberOf", {"$top": 100})
 
     def contacts(self, top=50):
         return self.list("me/contacts", {"$top": top}, limit=top)

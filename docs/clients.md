@@ -23,9 +23,14 @@ tested tenant, and how to re-check it on yours.
 | Need | Client | Scope (from the token's `scp`) |
 |---|---|---|
 | Mail, calendar, chats, channels, files, teams, contacts, To Do, Planner | Office `d3590ed6-52b3-4102-aeff-aad2292ab01c` | `Mail.ReadWrite`, `Mail.Send`, `Chat.ReadWrite`, `ChannelMessage.Send`, `Files.ReadWrite.All`, `Calendars.ReadWrite`, `Tasks.ReadWrite`, `People.Read.All` |
-| OneNote | Teams-classic `1fec8e78-bce4-4aaf-ab1b-5451cc387264` | `Notes.ReadWrite.All`, `Sites.ReadWrite.All` |
-| SharePoint sites, presence | OfficeHome `4765445b-32c6-49b0-83e6-1d93765276ca` | `Sites.Read.All`, `Presence.Read.All` |
+| OneNote | Microsoft Teams `1fec8e78-bce4-4aaf-ab1b-5451cc387264` (`C_TEAMS`) | `Notes.ReadWrite.All`, `Sites.ReadWrite.All` |
+| SharePoint sites, presence | OfficeHome `4765445b-32c6-49b0-83e6-1d93765276ca` (`C_OFFICEHOME`) | `Sites.Read.All`, `Presence.Read.All` |
 | Teams Assignments | Office, resource `api://8f348934-64be-4bb2-bc16-c54c96789f43` | `EduAssignments.ReadWrite`, `EduCurricula.ReadWrite` |
+
+Directory reads (`me()`, `user()`, `find_users()` and similar) can be served by any of Office, Teams
+and OfficeHome, and move to the next one if a client is throttled or refused, because Graph can
+throttle them per client. `C_ONENOTE` and `C_SITES` are older names for `C_TEAMS` and
+`C_OFFICEHOME`.
 
 Also FOCI and redeemable, but not needed by OutNote today: Outlook mobile
 (`27922004-...`, has `Presence.Read.All`, `Sites.ReadWrite.All`), OneDrive
