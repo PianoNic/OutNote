@@ -13,8 +13,15 @@ _CHUNK = 10 * 320 * 1024  # upload-session chunks must be multiples of 320 KiB
 _CONVERT_TIMEOUT = 120  # seconds; Graph converts before it answers
 
 
-def _item_base(item_id, drive_id=None):
-    return f"drives/{drive_id}/items/{item_id}" if drive_id else f"me/drive/items/{item_id}"
+def _item_base(item, drive_id=None):
+    """The Graph path of a drive item, from its id or the item itself. An item shared with you lives
+    in someone else's drive, so its own `id` alone won't find it: use its `remoteItem`."""
+    if isinstance(item, dict):
+        remote = item.get("remoteItem") or {}
+        parent = remote.get("parentReference") or item.get("parentReference") or {}
+        drive_id = drive_id or parent.get("driveId")
+        item = remote.get("id") or item["id"]
+    return f"drives/{drive_id}/items/{item}" if drive_id else f"me/drive/items/{item}"
 
 
 def _onenote(group_id=None):
@@ -37,16 +44,28 @@ class FilesMixin(Transport):
     def file(self, item_id, drive_id=None):
         return self.get(_item_base(item_id, drive_id))
 
+    def _content_url(self, base):
+        """A pre-authed download URL for the item at `base`, or None for a folder. The link on the
+        item isn't guaranteed, so a file without one asks `/content`, which redirects to the same
+        kind of URL. Raises `GraphError` if Graph has neither."""
+        item = self.get(base)
+        link = item.get("@microsoft.graph.downloadUrl")
+        if link:
+            return link
+        return None if "folder" in item else self.redirect(f"{base}/content")
+
     def download_url(self, item_id, drive_id=None):
-        """A direct, pre-authed download URL for a drive item (works for OneDrive
-        and channel files — pass the item's drive_id for the latter)."""
-        return self.get(_item_base(item_id, drive_id)).get("@microsoft.graph.downloadUrl")
+        """A direct, pre-authed download URL for a drive item, or None for a folder. Takes an id
+        (with `drive_id` for channel files) or an item dict from any listing, including
+        `shared_with_me()`."""
+        return self._content_url(_item_base(item_id, drive_id))
 
     def download(self, item_id, dest=None, drive_id=None):
-        """A drive item's bytes (also written to `dest` if given)."""
+        """A drive item's bytes (also written to `dest` if given). Takes the same as
+        `download_url`; raises `ValueError` for a folder."""
         url = self.download_url(item_id, drive_id)
         if not url:
-            raise ValueError(f"item {item_id} has no content (a folder?)")
+            raise ValueError("that item is a folder, which has no content to download")
         return _write(dest, fetch(url))
 
     def converted_url(self, item_id, format="pdf", drive_id=None):
@@ -68,8 +87,10 @@ class FilesMixin(Transport):
         """Bytes behind a SharePoint/OneDrive sharing or content URL — e.g. a
         file attached to a Teams message (`message_files`)."""
         token = base64.urlsafe_b64encode(url.encode()).decode().rstrip("=")
-        item = self.get(f"shares/u!{token}/driveItem")
-        return _write(dest, fetch(item["@microsoft.graph.downloadUrl"]))
+        link = self._content_url(f"shares/u!{token}/driveItem")
+        if not link:
+            raise ValueError("that link points to a folder, which has no content to download")
+        return _write(dest, fetch(link))
 
     def upload(self, src, dest_path, drive_id=None, conflict="replace", app_folder=False):
         """Upload a local file path or bytes to `dest_path` ('Folder/name.txt'
@@ -123,7 +144,8 @@ class FilesMixin(Transport):
         return self.list("me/drive/recent", {"$top": top}, limit=top)
 
     def shared_with_me(self, top=25):
-        """Files others shared with you."""
+        """Files others shared with you. They live in other people's drives, so pass the whole item
+        to `download`, `download_url` or `file`, not just its `id`."""
         return self.list("me/drive/sharedWithMe", {"$top": top}, limit=top)
 
     def sites(self, search="*"):

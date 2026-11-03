@@ -175,3 +175,92 @@ def test_batches_run_in_parallel_and_keep_order(monkeypatch):
     got = c.batch([f"me/x{i}" for i in range(45)])
     assert got == [str(i) for i in range(45)]
     assert active["peak"] > 1
+
+
+# --- download links -----------------------------------------------------------
+LINK = "@microsoft.graph.downloadUrl"
+
+
+class FakeHttp:
+    """Answers `/content` with a redirect, like Graph."""
+
+    def __init__(self, status=302):
+        self.status, self.urls = status, []
+
+    def request(self, method, url, **kw):
+        from entrance._http import Headers, Response
+
+        self.urls.append(url)
+        return Response(self.status, Headers(location="https://dl.test/redirected"), b"")
+
+
+def files_client(monkeypatch, item, status=302):
+    c = outnote.OutNote("tok")
+    seen = []
+    monkeypatch.setattr(c, "get", lambda path, *a, **k: seen.append(path) or item)
+    http = FakeHttp(status)
+    monkeypatch.setattr(_base, "http_client", lambda: http)
+    monkeypatch.setattr("outnote._files.fetch", lambda url, **k: url.encode())
+    c.seen, c.http = seen, http
+    return c
+
+
+def test_the_link_on_the_item_is_used_when_present(monkeypatch):
+    c = files_client(monkeypatch, {"id": "x", "file": {}, LINK: "https://dl.test/direct"})
+    assert c.download_url("x") == "https://dl.test/direct"
+    assert c.http.urls == []
+
+
+def test_a_file_without_a_link_falls_back_to_content(monkeypatch):
+    c = files_client(monkeypatch, {"id": "x", "name": "a.zip", "file": {}})
+    assert c.download("x") == b"https://dl.test/redirected"
+    assert c.http.urls[0].endswith("/me/drive/items/x/content")
+
+
+def test_download_shared_falls_back_to_content(monkeypatch):
+    c = files_client(monkeypatch, {"id": "x", "file": {}})
+    assert c.download_shared("https://share.test/f") == b"https://dl.test/redirected"
+    assert "/shares/u!" in c.http.urls[0] and c.http.urls[0].endswith("/driveItem/content")
+
+
+def test_folders_get_a_clear_error_and_no_content_request(monkeypatch):
+    c = files_client(monkeypatch, {"id": "x", "folder": {"childCount": 1}})
+    assert c.download_url("x") is None
+    with pytest.raises(ValueError, match="folder"):
+        c.download("x")
+    with pytest.raises(ValueError, match="folder"):
+        c.download_shared("https://share.test/f")
+    assert c.http.urls == []
+
+
+def test_a_file_with_no_link_at_all_is_a_graph_error(monkeypatch):
+    c = files_client(monkeypatch, {"id": "x", "file": {}}, status=404)
+    with pytest.raises(outnote.GraphError):
+        c.download("x")
+    with pytest.raises(outnote.GraphError):
+        c.download_shared("https://share.test/f")
+
+
+def test_a_shared_item_is_found_in_its_own_drive(monkeypatch):
+    shared = {
+        "id": "local",
+        "remoteItem": {"id": "real", "parentReference": {"driveId": "theirs"}},
+        LINK: "https://dl.test/direct",
+    }
+    c = files_client(monkeypatch, shared)
+    c.download_url(shared)
+    assert c.seen == ["drives/theirs/items/real"]
+
+
+def test_items_and_ids_both_work(monkeypatch):
+    c = files_client(monkeypatch, {"id": "x", LINK: "https://dl.test/direct"})
+    c.download_url("x")
+    c.download_url("x", drive_id="d")
+    c.download_url({"id": "x", "parentReference": {"driveId": "d2"}})
+    c.download_url({"id": "x"})
+    assert c.seen == [
+        "me/drive/items/x",
+        "drives/d/items/x",
+        "drives/d2/items/x",
+        "me/drive/items/x",
+    ]
