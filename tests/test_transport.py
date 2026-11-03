@@ -264,3 +264,114 @@ def test_items_and_ids_both_work(monkeypatch):
         "drives/d2/items/x",
         "me/drive/items/x",
     ]
+
+
+# --- suggest_recipients --------------------------------------------------------
+def person(name, address):
+    return {"id": name, "displayName": name, "scoredEmailAddresses": [{"address": address}]}
+
+
+def people_client(monkeypatch, people=(), directory=()):
+    c = outnote.OutNote("tok")
+    calls = {"people": [], "users": []}
+    monkeypatch.setattr(
+        c,
+        "get",
+        lambda path, params=None, **k: calls["people"].append(params) or {"value": list(people)},
+    )
+    monkeypatch.setattr(
+        c, "find_users", lambda text, top: calls["users"].append(text) or list(directory)
+    )
+    c.calls = calls
+    return c
+
+
+def test_suggestions_put_your_contacts_first_and_skip_the_directory_when_full(monkeypatch):
+    c = people_client(monkeypatch, [person("Ann", "ann@x.ch"), person("Abe", "abe@x.ch")])
+    got = c.suggest_recipients("a", top=2)
+    assert got == [
+        {"name": "Ann", "address": "ann@x.ch", "id": "Ann"},
+        {"name": "Abe", "address": "abe@x.ch", "id": "Abe"},
+    ]
+    assert c.calls["people"][0]["$search"] == '"a"' and c.calls["users"] == []
+
+
+def test_suggestions_fill_up_from_the_directory_without_duplicates(monkeypatch):
+    directory = [
+        {"id": "1", "displayName": "Ann again", "mail": "ANN@x.ch"},
+        {"id": "2", "displayName": "Ada", "mail": None, "userPrincipalName": "ada@x.ch"},
+        {"id": "3", "displayName": "No address"},
+    ]
+    c = people_client(monkeypatch, [person("Ann", "ann@x.ch")], directory)
+    got = c.suggest_recipients("a", top=5)
+    assert [g["address"] for g in got] == ["ann@x.ch", "ada@x.ch"]
+
+
+def test_suggestions_with_no_text_are_your_top_contacts(monkeypatch):
+    c = people_client(monkeypatch, [person("Ann", "ann@x.ch")])
+    assert c.suggest_recipients()[0]["name"] == "Ann"
+    assert "$search" not in c.calls["people"][0] and c.calls["users"] == []
+
+
+def test_suggestions_skip_people_without_an_address_and_clean_the_query(monkeypatch):
+    nobody = {"id": "x", "displayName": "No mail", "scoredEmailAddresses": []}
+    c = people_client(monkeypatch, [nobody])
+    assert c.suggest_recipients(' a"b ') == []
+    assert c.calls["people"][0]["$search"] == '"ab"'
+
+
+# --- search_chat ---------------------------------------------------------------
+def search_client(monkeypatch, *pages):
+    c = outnote.OutNote("tok")
+    bodies = []
+    answers = list(pages)
+
+    def post(path, body, client=None):
+        bodies.append(body["requests"][0])
+        hits, more = answers.pop(0)
+        return {
+            "value": [
+                {
+                    "hitsContainers": [
+                        {
+                            "hits": [
+                                {"hitId": h[0], "summary": "s", "resource": {"chatId": h[1]}}
+                                for h in hits
+                            ],
+                            "moreResultsAvailable": more,
+                        }
+                    ]
+                }
+            ]
+        }
+
+    monkeypatch.setattr(c, "post", post)
+    c.bodies = bodies
+    return c
+
+
+def test_search_chat_keeps_that_chat_across_pages(monkeypatch):
+    c = search_client(
+        monkeypatch,
+        ([("1", "other"), ("2", "mine")], True),
+        ([("3", "mine"), ("4", "other")], False),
+    )
+    got = c.search_chat("mine", "word")
+    assert [g["id"] for g in got] == ["2", "3"] and got[0]["_summary"] == "s"
+    assert "from" not in c.bodies[0] and c.bodies[1]["from"] == 2
+    assert c.bodies[0]["entityTypes"] == ["chatMessage"]
+
+
+def test_search_chat_stops_at_top_and_at_scan(monkeypatch):
+    many = [(str(i), "mine") for i in range(25)]
+    c = search_client(monkeypatch, (many, True))
+    assert len(c.search_chat("mine", "w", top=5)) == 5 and len(c.bodies) == 1
+    others = [(str(i), "other") for i in range(25)]
+    c = search_client(monkeypatch, (others, True), (others, True), (others, True))
+    assert c.search_chat("mine", "w", scan=50) == [] and len(c.bodies) == 2
+
+
+def test_search_is_unchanged(monkeypatch):
+    c = search_client(monkeypatch, ([("1", "x")], True))
+    assert [r["id"] for r in c.search("w", "chatMessage", 3)] == ["1"]
+    assert c.bodies[0]["size"] == 3
