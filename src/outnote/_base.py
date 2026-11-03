@@ -9,7 +9,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request
 
 from entrance import HTTPError as ClientError
@@ -57,6 +57,27 @@ class GraphError(RuntimeError):
 
 class CursorExpired(GraphError):
     """The server no longer accepts a `stream()` cursor: start again without one."""
+
+
+def _check_link(url, scheme, hosts=(), suffixes=()):
+    """Refuse a saved `stream()` or `delta()` link that doesn't point where it should. These links
+    are called with the user's token, so one from an untrusted source could otherwise send that token
+    to another server. Backslashes and whitespace are refused because URL parsers disagree on them."""
+    bad = not isinstance(url, str) or any(c == "\\" or c.isspace() or ord(c) < 32 for c in url)
+    if not bad:
+        try:
+            parts = urlsplit(url)
+            host = (parts.hostname or "").lower()
+            bad = (
+                parts.scheme != scheme
+                or parts.username is not None
+                or parts.password is not None
+                or not (host in hosts or host.endswith(tuple(suffixes)))
+            )
+        except ValueError:
+            bad = True
+    if bad:
+        raise ValueError("refusing a cursor that doesn't point to the expected Microsoft service")
 
 
 def _retry_after(headers, attempt):
@@ -145,6 +166,10 @@ class Transport:
             if q:
                 url += ("&" if "?" in url else "?") + q
         return url
+
+    def _check_graph_link(self, url):
+        base = urlsplit(self.base)
+        _check_link(url, base.scheme, hosts=(base.hostname,))
 
     def _send(self, req, raw=False, retry=True):
         """Send `req`; returns parsed JSON, or text (`raw=True`), or bytes
@@ -362,7 +387,9 @@ class Transport:
         """Incremental sync of a collection. First call (no `delta_link`) GETs
         `{path}/delta` and returns every item; pass the returned `delta_link`
         next time to get only what changed since. Returns
-        `(items, delta_link)`."""
+        `(items, delta_link)`. Raises `ValueError` if `delta_link` isn't a Graph URL."""
+        if delta_link:
+            self._check_graph_link(delta_link)
         url = delta_link or self._url(path.rstrip("/") + "/delta", params)
         items = []
         for _ in range(_MAX_PAGES * 4):

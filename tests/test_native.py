@@ -329,17 +329,15 @@ def test_stream_graph_pages_deletes_and_final_cursor(monkeypatch):
 
 
 def test_stream_resumes_and_reports_no_changes(monkeypatch):
-    c = client(
-        monkeypatch, [("https://g/done", {"value": [], "@odata.deltaLink": "https://g/done2"})]
-    )
-    got = list(c.stream("mail", "https://g/done"))
+    c = client(monkeypatch, [("/done", {"value": [], "@odata.deltaLink": "https://g/done2"})])
+    got = list(c.stream("mail", _base.GRAPH + "/done"))
     assert [(x.op, x.cursor) for x in got] == [("sync", "https://g/done2")]
 
 
 def test_expired_cursor_is_typed(monkeypatch):
-    c = client(monkeypatch, [("https://g/old", outnote.GraphError(410, "gone"))])
+    c = client(monkeypatch, [("/old", outnote.GraphError(410, "gone"))])
     with pytest.raises(outnote.CursorExpired):
-        list(c.stream("mail", "https://g/old"))
+        list(c.stream("mail", _base.GRAPH + "/old"))
 
 
 def test_a_failure_without_a_cursor_is_not_called_expired(monkeypatch):
@@ -474,3 +472,77 @@ def test_cache_keeps_progress_when_a_run_fails_midway():
     with pytest.raises(outnote.GraphError):
         cache.sync("mail")
     assert cache.cursor("mail") == "c1" and cache.item("mail", "1")
+
+
+# --- cursors can't send the token elsewhere --------------------------------------
+BAD_GRAPH_CURSORS = [
+    "https://evil.example/steal",
+    "http://graph.microsoft.com/v1.0/me",
+    "https://graph.microsoft.com.evil.example/x",
+    "https://graph.microsoft.com@evil.example/x",
+    "https://user:pw@graph.microsoft.com/x",
+    "https://evil.example\\@graph.microsoft.com/x",
+    "https://evil.example/ https://graph.microsoft.com/x",
+    "https://evil.example\t.graph.microsoft.com/x",
+    "/me",
+    "file:///etc/passwd",
+    "",
+]
+
+
+@pytest.mark.parametrize("cursor", [c for c in BAD_GRAPH_CURSORS if c])
+def test_stream_refuses_cursors_for_other_hosts(monkeypatch, cursor):
+    c = client(monkeypatch, [])  # any request at all would fail this test
+    with pytest.raises(ValueError, match="refusing a cursor"):
+        list(c.stream("mail", cursor))
+    assert c.fake.calls == []
+
+
+@pytest.mark.parametrize("cursor", [c for c in BAD_GRAPH_CURSORS if c])
+def test_delta_refuses_links_for_other_hosts(monkeypatch, cursor):
+    c = client(monkeypatch, [])
+    with pytest.raises(ValueError, match="refusing a cursor"):
+        c.delta("me/mailFolders", cursor)
+    assert c.fake.calls == []
+
+
+@pytest.mark.parametrize(
+    "cursor",
+    [
+        "https://evil.example/x",
+        "https://evil.teams.microsoft.com.example/x",
+        "http://chat.test/x",
+        "https://graph.microsoft.com/v1.0/me",
+        "https://x@chat.test/y",
+    ],
+)
+def test_chat_streams_refuse_cursors_for_other_hosts(monkeypatch, cursor):
+    c = client(monkeypatch, [("authz", AUTHZ)])
+    with pytest.raises(ValueError, match="refusing a cursor"):
+        list(c.stream("chats", cursor))
+    assert all("authz" in x["path"] for x in c.fake.calls)  # only the sign-in, never the cursor
+
+
+@pytest.mark.parametrize("host", ["chat.test", "de.ng.msg.teams.microsoft.com"])
+def test_chat_cursors_for_the_chat_service_are_accepted(monkeypatch, host):
+    page = {"conversations": [], "_metadata": {"syncState": f"https://{host}/next"}}
+    c = client(monkeypatch, [("authz", AUTHZ), (host, page)])
+    got = list(c.stream("chats", f"https://{host}/s"))
+    assert got[-1].op == "sync"
+
+
+def test_a_custom_base_is_the_trusted_graph_host(monkeypatch):
+    c = outnote.OutNote(lambda client_id, scope=None: "t", base="https://graph.example.us/v1.0")
+    fake = Fake([("/done", {"value": [], "@odata.deltaLink": "https://graph.example.us/v1.0/d2"})])
+    monkeypatch.setattr(c, "request", fake)
+    assert list(c.stream("mail", "https://graph.example.us/v1.0/done"))[-1].op == "sync"
+    with pytest.raises(ValueError):
+        list(c.stream("mail", _base.GRAPH + "/done"))
+
+
+def test_sqlite_cache_does_not_hide_a_refused_cursor(monkeypatch):
+    c = client(monkeypatch, [])
+    cache = outnote.SQLiteCache(":memory:", c)
+    cache._db.execute("INSERT INTO cursors VALUES ('mail', '', 'https://evil.example/x')")
+    with pytest.raises(ValueError):
+        cache.sync("mail")

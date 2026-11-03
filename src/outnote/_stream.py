@@ -15,14 +15,16 @@ replays a few changes and never loses one: handle changes idempotently. See docs
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
-from ._base import _MAX_PAGES, CursorExpired, GraphError
+from ._base import _MAX_PAGES, CursorExpired, GraphError, _check_link
 from ._mail import LIST_SELECT
 from ._native import _VIEW, NativeMixin, chat_from_native, message_from_native
 
 _EXPIRED = (400, 404, 409, 410)
 _GRAPH_PAGE = 999  # 1150 messages: 0.7 s at 999 per page, 2.7 s at 50
 _CHAT_PAGE = 200
+_CHAT_HOST_SUFFIXES = (".teams.microsoft.com",)
 
 
 @dataclass
@@ -49,7 +51,8 @@ class StreamMixin(NativeMixin):
     def stream(self, kind, cursor=None, **scope):
         """Yield `Change`s since `cursor` (None = everything). Stateless: nothing is kept between
         calls but the cursor you pass back. Raises `CursorExpired` when the server no longer
-        accepts the cursor; start again from None.
+        accepts the cursor; start again from None. Raises `ValueError` for a cursor that doesn't
+        point to the expected Microsoft service, because cursors are called with the user's token.
 
         `kind` and its options:
           * `mail` - `folder="inbox"`, one folder's messages, with `select=` as in `emails`
@@ -84,6 +87,7 @@ class StreamMixin(NativeMixin):
 
     def _stream_graph(self, kind, cursor, **scope):
         if cursor:
+            self._check_graph_link(cursor)
             url = cursor
         else:
             path, params = self._delta_start(kind, **scope)
@@ -117,6 +121,8 @@ class StreamMixin(NativeMixin):
         if kind == "messages" and not chat_id:
             raise ValueError("stream('messages') needs chat_id=")
         if cursor:
+            service = urlsplit(self._chatsvc()["url"]).hostname
+            _check_link(cursor, "https", hosts=(service,), suffixes=_CHAT_HOST_SUFFIXES)
             url, params = cursor, None
         elif kind == "chats":
             url, params = "conversations", {"view": _VIEW, "pageSize": _CHAT_PAGE}
