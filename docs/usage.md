@@ -74,7 +74,7 @@ for team in note.teams():
         note.channel_messages(team["id"], ch["id"])
         note.channel_files(team["id"], ch["id"])
 
-# OneDrive - bytes and text
+# OneDrive - bytes and text (pass a whole item from shared_with_me(), not just its id)
 data = note.download(item_id)
 text = note.extract_text("notes.docx", data)
 
