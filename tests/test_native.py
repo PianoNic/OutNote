@@ -208,6 +208,30 @@ def test_chat_messages_filter_by_since(monkeypatch):
     assert [m["id"] for m in got] == ["new"]
 
 
+def test_chat_message_uses_the_chat_service(monkeypatch):
+    files = json.dumps([{"itemid": "f", "fileName": "a.pdf", "objectUrl": "https://f/a.pdf"}])
+    raw = {"id": "7", "messagetype": "Text", "content": "x", "properties": {"files": files}}
+    c = client(monkeypatch, [("authz", AUTHZ), ("messages/7", raw)])
+    got = c.chat_message("19:a@thread.v2", "7")
+    assert got["id"] == "7" and got["chatId"] == "19:a@thread.v2"
+    assert c.message_files(got)[0]["name"] == "a.pdf"
+    assert not any(x["path"].startswith(_base.GRAPH) for x in c.fake.calls)
+
+
+@pytest.mark.parametrize("failure", [outnote.GraphError(404, "no"), KeyError("x")])
+def test_chat_message_falls_back_to_graph(monkeypatch, failure):
+    c = client(
+        monkeypatch, [("authz", failure), ("chats/c/messages/7", {"id": "7", "graph": True})]
+    )
+    assert c.chat_message("c", "7") == {"id": "7", "graph": True}
+
+
+def test_chat_message_without_native_uses_graph(monkeypatch):
+    c = client(monkeypatch, [("chats/c/messages/7", {"id": "7"})], native=False)
+    assert c.chat_message("c", "7") == {"id": "7"}
+    assert not any("authz" in x["path"] for x in c.fake.calls)
+
+
 def test_mail_startup_sends_what_outlook_sends(monkeypatch):
     c = client(monkeypatch, [("startupdata", {"findConversation": {}})])
     assert "findConversation" in c.mail_startup(top=10)

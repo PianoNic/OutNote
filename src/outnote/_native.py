@@ -191,6 +191,20 @@ class NativeMixin(Transport):
             log.warning("native messages failed, using Graph: %s", e)
             return None
 
+    def _native_message(self, chat_id, message_id):
+        """One message through chatsvc, or None if Graph should answer instead."""
+        if not self.native:
+            return None
+        try:
+            raw = self._chatsvc_get(
+                f"conversations/{chat_id}/messages/{message_id}",
+                {"view": f"{_VIEW}|supportsMessageProperties"},
+            )
+            return message_from_native(raw, chat_id)
+        except _FALLBACK as e:
+            log.warning("native message failed, using Graph: %s", e)
+            return None
+
     def _read_messages(self, chat_id, top, since=None):
         out = []
         page = self._chatsvc_get(

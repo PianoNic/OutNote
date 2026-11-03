@@ -78,6 +78,14 @@ class TeamsMixin(NativeMixin, DirectoryMixin):
             params["$orderby"] = "lastModifiedDateTime desc"
         return self.list(f"me/chats/{chat_id}/messages", params, limit=top)
 
+    def chat_message(self, chat_id, message_id):
+        """One message of a chat, with its attachments (see `message_files`). Uses Teams' own API,
+        because Graph can throttle single-message reads heavily, and falls back to Graph."""
+        fast = self._native_message(chat_id, message_id)
+        if fast is not None:
+            return fast
+        return self.get(f"chats/{chat_id}/messages/{message_id}")
+
     # --- sending (posts as the signed-in user) ------------------------------
     def _mention_body(self, text, html, mentions):
         content = text if html else text_to_html(text)

@@ -11,7 +11,7 @@ Verified end-to-end against a live locked-down EDU tenant.
 | Calendar | `events(start, end)`, `event(id)`, `today()`, `calendars()` | `/me/events`, `/me/calendarView` |
 | Scheduling | `free_busy(users, start, end)`, `find_meeting_times(attendees)` | `getSchedule`, `findMeetingTimes` |
 | Calendar writes | `create_event`, `update_event`, `delete_event`, `respond_event` | `/me/events` |
-| Teams chats | `chats(chat_type=)`, `chat(id)`, `chat_members(id)`, `unread_chats()`, `find_chat(user)`, `chat_messages(id, since=)` | `/me/chats` (members + last message expanded); `unread_chats`, `find_chat` and `chat_messages` use Teams' chat service, falling back to Graph |
+| Teams chats | `chats(chat_type=)`, `chat(id)`, `chat_members(id)`, `unread_chats()`, `find_chat(user)`, `chat_messages(id, since=)`, `chat_message(id, message_id)` | `/me/chats` (members + last message expanded); `unread_chats`, `find_chat` and `chat_messages` use Teams' chat service, falling back to Graph |
 | Teams sending | `send_chat_message(id, text, mentions=)`, `create_chat(users)`, `send_to(user, text)` | `/chats`, `/chats/{id}/messages` |
 | Message lifecycle | `edit_chat_message`, `delete_chat_message`, `undelete_chat_message`, `react`, `unreact`, `mark_chat_read`, `mark_chat_unread` | `PATCH`, `softDelete`, `setReaction`, `markChatReadForUser` |
 | Chat management | `rename_chat`, `add_chat_member`, `remove_chat_member`, `pinned_messages`, `pin_message`, `unpin_message`, `hide_chat`, `unhide_chat` | `/chats/{id}/...` |
