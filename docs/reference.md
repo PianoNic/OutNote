@@ -27,6 +27,8 @@ Verified end-to-end against a live locked-down EDU tenant.
 | Planner | `planner_tasks()`, `plans(group_id=)`, `plan_tasks(plan)`, `buckets(plan)`, `planner_task_details(task)` | `/me/planner`, `/planner/plans` |
 | Assignments | `classes()`, `assignments(class_id=)`, `assignment_resources`, `submissions`, `due_assignments(days)` | Teams Assignments API (see [clients.md](clients.md)) |
 | Teams activity | `activity()`, `mentions()`, `call_history()`, `teams_presence(ids)` | Teams' own APIs, undocumented, no Graph equivalent or fallback |
+| Autocomplete | `suggest_recipients(text)` | `/me/people?$search`, your frequent contacts first, then `/users` |
+| Search one chat | `search_chat(chat_id, query, scan=)` | `/search/query`, filtered to that chat |
 | Extras | `people()`, `reminders(start, end)`, `categories()`, `mail_tips(addresses)`, `recent_files()`, `shared_with_me()` | `/me/people`, `reminderView`, `masterCategories`, `getMailTips`, `/me/drive/recent`, `/me/drive/sharedWithMe` |
 | Mailbox settings | `mailbox_settings()`, `auto_replies()`, `working_hours()`, `mail_rules()` | `/me/mailboxSettings`, `messageRules`, read-only, through the Teams client |
 | Behind an API | `outnote.api`: `ApiCache`, `ClientPool`, `respond`, `error_response` | optional, see [frontend-and-api.md](frontend-and-api.md) |
