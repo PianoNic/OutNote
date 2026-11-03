@@ -1,6 +1,6 @@
 """To Do, Planner, Education (classes & assignments) and unified search."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from ._base import C_OFFICE, C_SITES, Transport
 
@@ -104,7 +104,7 @@ class EducationMixin(Transport):
 
     def due_assignments(self, days=7):
         """Assignments due within the next `days` days, soonest first."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         horizon = (now + timedelta(days=days)).isoformat().replace("+00:00", "Z")
         start = now.isoformat().replace("+00:00", "Z")
         due = [

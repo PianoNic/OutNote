@@ -4,7 +4,7 @@ Verified end-to-end against a live locked-down EDU tenant.
 
 | Area | Methods | Endpoint |
 |---|---|---|
-| Mail | `emails(folder, unread=)`, `unread_emails()`, `email(id)`, `mail_folders()` | `/me/mailFolders/{f}/messages` |
+| Mail | `emails(folder, unread=, select=)` (list fields, `select="*"` for all), `unread_emails()`, `email(id)`, `mail_folders()` | `/me/mailFolders/{f}/messages` |
 | Mail attachments | `attachments(id)`, `download_attachment(id, att)` | `/me/messages/{id}/attachments` |
 | Mail writes | `send_mail`, `reply`, `forward`, `create_draft`, `send_draft`, `mark_read`, `flag`, `move_email`, `delete_email` | `/me/sendMail`, `/me/messages/...` |
 | Calendar | `events(start, end)`, `event(id)`, `today()`, `calendars()` | `/me/events`, `/me/calendarView` |
@@ -26,7 +26,7 @@ Verified end-to-end against a live locked-down EDU tenant.
 | Planner | `planner_tasks()`, `plans(group_id=)`, `plan_tasks(plan)`, `buckets(plan)`, `planner_task_details(task)` | `/me/planner`, `/planner/plans` |
 | Assignments | `classes()`, `assignments(class_id=)`, `assignment_resources`, `submissions`, `due_assignments(days)` | Teams Assignments API (see [clients.md](clients.md)) |
 | Search | `search_emails`, `search_files`, `search_messages`, `search_people`, `search(q, entity)` | `/search/query` |
-| Robustness | `batch(requests)`, `delta(path, delta_link)` | `/$batch` (20 per call, throttled sub-requests retried), `/delta` |
+| Robustness | `batch(requests)`, `delta(path, delta_link)` | `/$batch` (20 per call, 4 calls at once, throttled sub-requests retried), `/delta` |
 | Text | `message_text(msg)`, `html_to_text(html)`, `extract_text(name, data)` | - |
 | Anything | `get`, `post`, `patch`, `put`, `delete`, `list` | any endpoint, follows `@odata.nextLink` |
 
@@ -37,8 +37,8 @@ on many tenants (403). The meeting *chat* works without them.
 
 - Works against **managed** Entra tenants (`login.microsoftonline.com`) with these
   first-party clients pre-consented - the common case for Microsoft 365 / EDU.
-- **Push / SMS MFA can't be done headless** - only TOTP. Enroll an authenticator
-  and pass its Base32 secret, or use `interactive=True`.
+- **SMS MFA can't be done headless.** Use TOTP, number-matching push (`push=True`),
+  `mfa=MfaPrompt`, or `interactive=True`.
 - Which scopes each client carries is **tenant-dependent**. Online-meeting lookup
   and transcripts 403 on the tested tenant.
 - SharePoint-index search (`search_files`, `sites(search)`, `search(entity="site")`)

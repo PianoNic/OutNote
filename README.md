@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/PianoNic/OutNote"><img src="https://badgetrack.pianonic.ch/badge?tag=outnote&label=visits&color=7719AA&style=flat" alt="visits"/></a>
-  <img src="https://img.shields.io/badge/python-3.10%2B-7719AA" alt="Python 3.10+"/>
+  <img src="https://img.shields.io/badge/python-3.11%2B-7719AA" alt="Python 3.11+"/>
   <a href="https://github.com/PianoNic/OutNote/releases"><img src="https://img.shields.io/github/v/release/PianoNic/OutNote?include_prereleases&color=7719AA&label=Latest%20Release" alt="Latest release"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-7719AA.svg" alt="MIT license"/></a>
   <a href="https://github.com/PianoNic/Entrance"><img src="https://img.shields.io/badge/built%20on-entrance-7719AA.svg" alt="Built on Entrance"/></a>
@@ -44,7 +44,7 @@ It signs in (via [`entrance`](https://github.com/PianoNic/Entrance)) with the pr
 pip install outnote        # or: uv add outnote
 ```
 
-Python 3.10+; [`ms-entrance`](https://github.com/PianoNic/Entrance) is pulled in automatically. `pip install "outnote[pdf]"` adds PDF text extraction.
+Python 3.11+; [`ms-entrance`](https://github.com/PianoNic/Entrance) is pulled in automatically. `pip install "outnote[pdf]"` adds PDF text extraction.
 
 ## Quickstart
 

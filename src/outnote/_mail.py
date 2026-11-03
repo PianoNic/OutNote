@@ -3,7 +3,14 @@
 import base64
 import os
 
-from ._base import Transport
+from ._base import GraphError, Transport
+
+# What a list needs. Measured on 25 messages: about 45 ms for these, 215 ms once `toRecipients` is
+# added, 505 ms for everything. `email(id)` fetches the rest of one message.
+LIST_SELECT = (
+    "id,subject,from,receivedDateTime,isRead,hasAttachments,bodyPreview,"
+    "importance,flag,conversationId,parentFolderId"
+)
 
 
 def _recipients(addrs):
@@ -52,8 +59,10 @@ class MailMixin(Transport):
     # --- read ---------------------------------------------------------------
     def emails(self, folder="inbox", top=25, search=None, select=None, unread=False):
         """Messages in `folder` (a well-known name like 'inbox'/'sentitems' or
-        a folder id), newest first. `unread=True` keeps only unread ones."""
-        params = {"$top": top, "$select": select}
+        a folder id), newest first. `unread=True` keeps only unread ones. Returns
+        list fields with `bodyPreview`, no `body` or `toRecipients`, which is about
+        10x faster: use `email(id)` for one full message, `select="*"` for all fields."""
+        params = {"$top": top, "$select": None if select == "*" else select or LIST_SELECT}
         if search:
             params["$search"] = f'"{search}"'
         else:
@@ -74,13 +83,18 @@ class MailMixin(Transport):
         top = self.list("me/mailFolders", {"$top": 100})
         if not include_children:
             return top
-        out, stack = [], [(f, f["displayName"]) for f in top]
-        while stack:
-            f, path = stack.pop(0)
-            out.append({**f, "path": path})
-            if f.get("childFolderCount"):
-                for c in self.list(f"me/mailFolders/{f['id']}/childFolders", {"$top": 100}):
-                    stack.append((c, f"{path}/{c['displayName']}"))
+        out, level = [], [(f, f["displayName"]) for f in top]
+        while level:  # one $batch per depth instead of one request per folder
+            out.extend({**f, "path": path} for f, path in level)
+            parents = [(f, path) for f, path in level if f.get("childFolderCount")]
+            found = self.batch(
+                [f"me/mailFolders/{f['id']}/childFolders?$top=100" for f, _ in parents]
+            )
+            level = []
+            for (_, path), res in zip(parents, found, strict=True):
+                if isinstance(res, GraphError):
+                    raise res
+                level.extend((c, f"{path}/{c['displayName']}") for c in res.get("value", []))
         return out
 
     # --- attachments --------------------------------------------------------

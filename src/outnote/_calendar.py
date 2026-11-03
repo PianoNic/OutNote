@@ -1,6 +1,6 @@
 """Calendar: events, calendars, scheduling (free/busy) and event writes."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from ._base import Transport
 
@@ -8,7 +8,7 @@ from ._base import Transport
 def _dt(value, tz="UTC"):
     if isinstance(value, datetime):
         if value.tzinfo:
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+            value = value.astimezone(UTC).replace(tzinfo=None)
             tz = "UTC"
         value = value.isoformat(timespec="seconds")
     return {"dateTime": value, "timeZone": tz}
@@ -17,8 +17,8 @@ def _dt(value, tz="UTC"):
 def _iso(value):
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
     return value
 
 
