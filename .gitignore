@@ -16,5 +16,10 @@ venv/
 *.token
 gtoken.txt
 
+# Local caches hold real mail and chats
+*.db
+*.db-wal
+*.db-shm
+
 # Browser capture scratch
 .playwright-mcp/

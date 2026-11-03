@@ -6,6 +6,7 @@ from datetime import datetime
 from urllib.parse import unquote
 
 from ._base import GRAPH
+from ._native import NativeMixin
 from ._people import DirectoryMixin
 from ._text import text_to_html
 
@@ -18,7 +19,7 @@ def _iso(value):
     return value
 
 
-class TeamsMixin(DirectoryMixin):
+class TeamsMixin(NativeMixin, DirectoryMixin):
     # --- chats --------------------------------------------------------------
     def chats(self, top=25, chat_type=None, expand=True):
         """1:1, group and meeting chats, most recently active first. With
@@ -41,10 +42,13 @@ class TeamsMixin(DirectoryMixin):
 
     def unread_chats(self, top=50):
         """Chats whose last message is newer than when I last read the chat
-        and was not sent by me."""
+        and was not sent by me. On a brokered client this comes from Teams' own
+        API, so members only have ids, with a name for whoever sent the last
+        message; `chat(id)` has the rest."""
         me = self._me_id()
         out = []
-        for c in self.chats(top=top):
+        chats = self._native_chats(top)
+        for c in self.chats(top=top) if chats is None else chats:
             last = c.get("lastMessagePreview") or {}
             sender = ((last.get("from") or {}).get("user") or {}).get("id")
             seen = (c.get("viewpoint") or {}).get("lastMessageReadDateTime") or ""
@@ -55,7 +59,8 @@ class TeamsMixin(DirectoryMixin):
     def find_chat(self, user, top=200):
         """The 1:1 chat with `user` (UPN, email, id or name), or None."""
         u = self.resolve_user(user)
-        for c in self.chats(top=top, chat_type="oneOnOne"):
+        chats = self._native_chats(top, "oneOnOne")
+        for c in self.chats(top=top, chat_type="oneOnOne") if chats is None else chats:
             for m in c.get("members") or []:
                 if m.get("userId") == u["id"]:
                     return c
@@ -64,6 +69,9 @@ class TeamsMixin(DirectoryMixin):
     def chat_messages(self, chat_id, top=30, since=None):
         """Messages in a chat, newest first; `since` (datetime/ISO) keeps only
         messages created or edited after it."""
+        fast = self._native_messages(chat_id, top, _iso(since) if since else None)
+        if fast is not None:
+            return fast
         params = {"$top": min(top, 50)}
         if since:
             params["$filter"] = f"lastModifiedDateTime gt {_iso(since)}"

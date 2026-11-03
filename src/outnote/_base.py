@@ -55,6 +55,10 @@ class GraphError(RuntimeError):
         super().__init__(f"Graph {status}: {message}")
 
 
+class CursorExpired(GraphError):
+    """The server no longer accepts a `stream()` cursor: start again without one."""
+
+
 def _retry_after(headers, attempt):
     ra = (headers or {}).get("Retry-After")
     return float(ra) if ra and str(ra).replace(".", "", 1).isdigit() else 2**attempt
@@ -117,14 +121,17 @@ def fetch(url, timeout=_TIMEOUT):
 
 
 class Transport:
-    def __init__(self, token, base=GRAPH):
+    def __init__(self, token, base=GRAPH, native=True):
         """`token` is either an access-token string (used for every call) or a
         callable `client_id -> access_token` (the broker from `authenticate`,
-        which hands each service the right client's token)."""
+        which hands each service the right client's token). `native=False` keeps
+        reads on Graph; a static token always does, because it can't reach the
+        web clients' own APIs (see `_native.py`)."""
         if not token:
             raise ValueError("token is required")
         self._tp = token if callable(token) else (lambda _client: token)
         self._scoped = callable(token)  # a broker can mint non-Graph tokens
+        self.native = native and self._scoped
         self.token = token if isinstance(token, str) else None
         self.base = base.rstrip("/")
         self._ids = {}  # cached me/tenant ids
@@ -411,3 +418,15 @@ class Transport:
                 or self._directory(self.list, "organization", {"$select": "id"})[0]["id"]
             )
         return self._ids["tenant"]
+
+    def _upn(self):
+        if "upn" not in self._ids:
+            claims = self._claims()
+            self._ids["upn"] = (
+                claims.get("upn")
+                or claims.get("preferred_username")
+                or self._directory(self.get, "me", {"$select": "userPrincipalName"})[
+                    "userPrincipalName"
+                ]
+            )
+        return self._ids["upn"]
