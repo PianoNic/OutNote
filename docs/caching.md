@@ -9,6 +9,7 @@ When you want the instant feel of Outlook and Teams on the web, add caching on t
 |---|---|---|
 | A cache that just works | `SQLiteCache` | one SQLite file |
 | Your own storage (Redis, Postgres, a queue, memory) | `note.stream()` | one cursor string per kind |
+| A web app or API, using normal calls only | [frontend-and-api.md](frontend-and-api.md) | short-lived results |
 
 `SQLiteCache` is built on `stream()`, so both behave the same.
 

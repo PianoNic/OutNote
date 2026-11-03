@@ -29,6 +29,7 @@ Verified end-to-end against a live locked-down EDU tenant.
 | Teams activity | `activity()`, `mentions()`, `call_history()`, `teams_presence(ids)` | Teams' own APIs, undocumented, no Graph equivalent or fallback |
 | Extras | `people()`, `reminders(start, end)`, `categories()`, `mail_tips(addresses)`, `recent_files()`, `shared_with_me()` | `/me/people`, `reminderView`, `masterCategories`, `getMailTips`, `/me/drive/recent`, `/me/drive/sharedWithMe` |
 | Mailbox settings | `mailbox_settings()`, `auto_replies()`, `working_hours()`, `mail_rules()` | `/me/mailboxSettings`, `messageRules`, read-only, through the Teams client |
+| Behind an API | `outnote.api`: `ApiCache`, `ClientPool`, `respond`, `error_response` | optional, see [frontend-and-api.md](frontend-and-api.md) |
 | Search | `search_emails`, `search_files`, `search_messages`, `search_people`, `search(q, entity)` | `/search/query` |
 | Robustness | `batch(requests)`, `delta(path, delta_link)` | `/$batch` (20 per call, 4 calls at once, throttled sub-requests retried), `/delta` |
 | Sync | `stream(kind, cursor)`, `SQLiteCache(path, client)` | Graph delta and Teams' sync cursors, see [caching.md](caching.md) |
@@ -55,4 +56,5 @@ on many tenants (403). The meeting *chat* works without them.
   **undocumented APIs** that can change without notice; `native=False` keeps other reads on Graph.
 
 See [clients.md](clients.md) for the FOCI client/scope map and how it was found, and
-[caching.md](caching.md) for speed, sync and caching.
+[caching.md](caching.md) for speed, sync and caching. Building a web app or API? See
+[frontend-and-api.md](frontend-and-api.md).
