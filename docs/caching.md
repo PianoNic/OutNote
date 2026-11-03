@@ -77,6 +77,10 @@ Two rules keep this correct:
 2. **Handle `CursorExpired`.** It means Microsoft no longer accepts your cursor, so clear that kind
    and start again from `None`.
 
+Cursors are called with the user's token, so `stream()` raises `ValueError` for one that doesn't point to
+the expected Microsoft service. If your API accepts cursors from outside, also encrypt or sign them, and
+check they belong to that user.
+
 ```python
 from outnote import CursorExpired
 
