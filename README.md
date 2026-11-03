@@ -35,7 +35,7 @@ It signs in (via [`entrance`](https://github.com/PianoNic/Entrance)) with the pr
 - 📬 **Broad coverage** - mail, calendar, Teams chats & channels, OneDrive, SharePoint, OneNote, To Do, Planner, Assignments
 - ✉️ **Writes too** - send mail, Teams messages (with @mentions), events, uploads, OneNote pages, tasks
 - 🧾 **Text out** - Teams/OneNote HTML to text, `.docx`/`.pptx`/`.xlsx`/`.pdf` extraction
-- ⚡ **Robust** - 429/5xx backoff, `$batch`, delta queries, nextLink paging
+- ⚡ **Fast and robust** - stateless by default, optional [sync and caching](docs/caching.md), 429/5xx backoff, `$batch`, delta queries
 - 🖥️ **CLI** - `outnote --text chats --unread`
 
 ## Install

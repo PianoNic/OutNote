@@ -11,6 +11,7 @@
     note.sites()                                            # SharePoint
     note.notebooks(); note.pages(sec); note.page_text(id)   # OneNote
     note.search("budget", entity="driveItem")               # unified search
+    note.stream("mail", cursor); SQLiteCache("o.db", note)  # sync and optional cache
 
 One sign-in yields a FOCI family refresh token (saved to `.ms_frt`, so later
 runs skip the sign-in); a broker mints the right first-party client's token per
@@ -42,6 +43,7 @@ from entrance import (
 
 from ._auth import OFFICEHOME, authenticate
 from ._broker import TokenError
+from ._cache import SQLiteCache
 from ._graph import (
     C_EDU,
     C_OFFICE,
@@ -49,15 +51,20 @@ from ._graph import (
     C_ONENOTE,
     C_SITES,
     C_TEAMS,
+    CursorExpired,
     GraphError,
     OutNote,
 )
+from ._stream import Change
 from ._text import extract_text, html_to_text, message_text
 
 __all__ = [
     "OutNote",
     "authenticate",
     "GraphError",
+    "CursorExpired",
+    "Change",
+    "SQLiteCache",
     "TokenError",
     "extract_text",
     "html_to_text",

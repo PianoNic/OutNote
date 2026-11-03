@@ -118,6 +118,14 @@ class FilesMixin(Transport):
         return self.delete(_item_base(item_id, drive_id))
 
     # --- sharepoint ---------------------------------------------------------
+    def recent_files(self, top=25):
+        """Files you used recently, newest first."""
+        return self.list("me/drive/recent", {"$top": top}, limit=top)
+
+    def shared_with_me(self, top=25):
+        """Files others shared with you."""
+        return self.list("me/drive/sharedWithMe", {"$top": top}, limit=top)
+
     def sites(self, search="*"):
         return self.list(f"sites?search={search}", client=C_SITES)
 

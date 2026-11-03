@@ -5,12 +5,13 @@ Verified end-to-end against a live locked-down EDU tenant.
 | Area | Methods | Endpoint |
 |---|---|---|
 | Mail | `emails(folder, unread=, select=)` (list fields, `select="*"` for all), `unread_emails()`, `email(id)`, `mail_folders()` | `/me/mailFolders/{f}/messages` |
+| Mail startup | `mail_startup(top=)` | Outlook's `startupdata.ashx` (undocumented) |
 | Mail attachments | `attachments(id)`, `download_attachment(id, att)` | `/me/messages/{id}/attachments` |
 | Mail writes | `send_mail`, `reply`, `forward`, `create_draft`, `send_draft`, `mark_read`, `flag`, `move_email`, `delete_email` | `/me/sendMail`, `/me/messages/...` |
 | Calendar | `events(start, end)`, `event(id)`, `today()`, `calendars()` | `/me/events`, `/me/calendarView` |
 | Scheduling | `free_busy(users, start, end)`, `find_meeting_times(attendees)` | `getSchedule`, `findMeetingTimes` |
 | Calendar writes | `create_event`, `update_event`, `delete_event`, `respond_event` | `/me/events` |
-| Teams chats | `chats(chat_type=)`, `chat(id)`, `chat_members(id)`, `unread_chats()`, `find_chat(user)`, `chat_messages(id, since=)` | `/me/chats` (members + last message expanded) |
+| Teams chats | `chats(chat_type=)`, `chat(id)`, `chat_members(id)`, `unread_chats()`, `find_chat(user)`, `chat_messages(id, since=)` | `/me/chats` (members + last message expanded); `unread_chats`, `find_chat` and `chat_messages` use Teams' chat service, falling back to Graph |
 | Teams sending | `send_chat_message(id, text, mentions=)`, `create_chat(users)`, `send_to(user, text)` | `/chats`, `/chats/{id}/messages` |
 | Message lifecycle | `edit_chat_message`, `delete_chat_message`, `undelete_chat_message`, `react`, `unreact`, `mark_chat_read`, `mark_chat_unread` | `PATCH`, `softDelete`, `setReaction`, `markChatReadForUser` |
 | Chat management | `rename_chat`, `add_chat_member`, `remove_chat_member`, `pinned_messages`, `pin_message`, `unpin_message`, `hide_chat`, `unhide_chat` | `/chats/{id}/...` |
@@ -25,8 +26,12 @@ Verified end-to-end against a live locked-down EDU tenant.
 | To Do | `task_lists()`, `tasks(list)`, `create_task`, `complete_task`, `delete_task` | `/me/todo/lists` |
 | Planner | `planner_tasks()`, `plans(group_id=)`, `plan_tasks(plan)`, `buckets(plan)`, `planner_task_details(task)` | `/me/planner`, `/planner/plans` |
 | Assignments | `classes()`, `assignments(class_id=)`, `assignment_resources`, `submissions`, `due_assignments(days)` | Teams Assignments API (see [clients.md](clients.md)) |
+| Teams activity | `activity()`, `mentions()`, `call_history()`, `teams_presence(ids)` | Teams' own APIs, undocumented, no Graph equivalent or fallback |
+| Extras | `people()`, `reminders(start, end)`, `categories()`, `mail_tips(addresses)`, `recent_files()`, `shared_with_me()` | `/me/people`, `reminderView`, `masterCategories`, `getMailTips`, `/me/drive/recent`, `/me/drive/sharedWithMe` |
+| Mailbox settings | `mailbox_settings()`, `auto_replies()`, `working_hours()`, `mail_rules()` | `/me/mailboxSettings`, `messageRules`, read-only, through the Teams client |
 | Search | `search_emails`, `search_files`, `search_messages`, `search_people`, `search(q, entity)` | `/search/query` |
 | Robustness | `batch(requests)`, `delta(path, delta_link)` | `/$batch` (20 per call, 4 calls at once, throttled sub-requests retried), `/delta` |
+| Sync | `stream(kind, cursor)`, `SQLiteCache(path, client)` | Graph delta and Teams' sync cursors, see [caching.md](caching.md) |
 | Text | `message_text(msg)`, `html_to_text(html)`, `extract_text(name, data)` | - |
 | Anything | `get`, `post`, `patch`, `put`, `delete`, `list` | any endpoint, follows `@odata.nextLink` |
 
@@ -46,4 +51,8 @@ on many tenants (403). The meeting *chat* works without them.
   `files()` and `get("me/drive/recent")` still work.
 - Treat `.ms_frt` and `.ms_session.json` like passwords (both are gitignored).
 
-See [clients.md](clients.md) for the FOCI client/scope map and how it was found.
+- `stream("chats")`, `stream("messages")`, `mail_startup()` and the native routes use
+  **undocumented APIs** that can change without notice; `native=False` keeps other reads on Graph.
+
+See [clients.md](clients.md) for the FOCI client/scope map and how it was found, and
+[caching.md](caching.md) for speed, sync and caching.

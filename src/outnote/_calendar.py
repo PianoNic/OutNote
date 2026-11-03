@@ -51,6 +51,10 @@ class CalendarMixin(Transport):
         start = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
         return self.events(start, start + timedelta(days=1), top)
 
+    def reminders(self, start, end):
+        """Event reminders due between `start` and `end` (ISO strings, UTC)."""
+        return self.list(f"me/reminderView(startDateTime='{start}',endDateTime='{end}')")
+
     def calendars(self):
         return self.list("me/calendars")
 

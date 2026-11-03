@@ -3,7 +3,7 @@
 import base64
 import os
 
-from ._base import GraphError, Transport
+from ._base import C_TEAMS, GraphError, Transport
 
 # What a list needs. Measured on 25 messages: about 45 ms for these, 215 ms once `toRecipients` is
 # added, 505 ms for everything. `email(id)` fetches the rest of one message.
@@ -96,6 +96,37 @@ class MailMixin(Transport):
                     raise res
                 level.extend((c, f"{path}/{c['displayName']}") for c in res.get("value", []))
         return out
+
+    # Mailbox settings need MailboxSettings.ReadWrite, which the Teams client has and Office doesn't.
+    def mailbox_settings(self):
+        """Time zone, language, date formats, working hours and auto-replies."""
+        return self.get("me/mailboxSettings", client=C_TEAMS)
+
+    def auto_replies(self):
+        """Your out-of-office setting: `status`, the two reply messages and any schedule."""
+        return self.get("me/mailboxSettings/automaticRepliesSetting", client=C_TEAMS)
+
+    def working_hours(self):
+        """Your working days and hours (`daysOfWeek`, `startTime`, `endTime`, `timeZone`)."""
+        return self.get("me/mailboxSettings/workingHours", client=C_TEAMS)
+
+    def mail_rules(self):
+        """Your inbox rules."""
+        return self.list("me/mailFolders/inbox/messageRules", client=C_TEAMS)
+
+    def categories(self):
+        """Your Outlook categories (`displayName`, `color`)."""
+        return self.list("me/outlook/masterCategories")
+
+    def mail_tips(self, addresses):
+        """Before sending: auto-replies and full mailboxes of `addresses`."""
+        if isinstance(addresses, str):
+            addresses = [addresses]
+        body = {
+            "EmailAddresses": addresses,
+            "MailTipsOptions": "automaticReplies,mailboxFullStatus",
+        }
+        return self.post("me/getMailTips", body)["value"]
 
     # --- attachments --------------------------------------------------------
     def attachments(self, message_id):

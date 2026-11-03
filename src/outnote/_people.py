@@ -63,6 +63,11 @@ class DirectoryMixin(Transport):
 
 
 class ProfileMixin(Transport):
+    def people(self, top=25):
+        """People you work with most, ranked by Microsoft (`me/people`)."""
+        params = {"$top": top, "$select": "id,displayName,jobTitle,department,scoredEmailAddresses"}
+        return self.list("me/people", params, limit=top)
+
     def photo(self):
         """Your profile photo as bytes, or None if there is none."""
         try:

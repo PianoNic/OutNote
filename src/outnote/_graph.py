@@ -17,12 +17,14 @@ from ._base import (
     C_SITES,
     C_TEAMS,
     GRAPH,
+    CursorExpired,
     GraphError,
 )
 from ._calendar import CalendarMixin
 from ._files import FilesMixin
 from ._mail import MailMixin
 from ._people import ProfileMixin
+from ._stream import StreamMixin
 from ._teams import TeamsMixin
 from ._text import extract_text, html_to_text, message_text
 from ._work import _SEARCH_CLIENT, C_EDU, EducationMixin, SearchMixin, TasksMixin
@@ -35,6 +37,7 @@ __all__ = [
     "C_SITES",
     "C_TEAMS",
     "C_EDU",
+    "CursorExpired",
     "GraphError",
     "OutNote",
     "_MAX_PAGES",
@@ -53,18 +56,19 @@ class OutNote(
     TasksMixin,
     EducationMixin,
     SearchMixin,
+    StreamMixin,
 ):
     """The whole client. Build it with `authenticate(...)`, from a saved
     refresh token with `OutNote.from_refresh_token(...)`, or from a single
     access token with `OutNote(token)`."""
 
     @classmethod
-    def from_refresh_token(cls, refresh_token, tenant="common", store=None):
+    def from_refresh_token(cls, refresh_token, tenant="common", store=None, native=True):
         """A client brokered from a FOCI family refresh token you already
         have — no sign-in. With `store`, the rotated token is saved there."""
         from ._broker import Broker
 
-        return cls(Broker(refresh_token, tenant, store=store))
+        return cls(Broker(refresh_token, tenant, store=store), native=native)
 
     # plain-text helpers, also importable from `outnote`
     message_text = staticmethod(message_text)

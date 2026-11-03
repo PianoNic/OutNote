@@ -31,6 +31,7 @@ def authenticate(
     push_timeout=120,
     push_interval=3,
     mfa=None,
+    native=True,
     **login_kwargs,
 ):
     """Sign in and return an `OutNote` client wired to a token broker.
@@ -55,7 +56,7 @@ def authenticate(
         `OtpRejected`. `password` may be an `outnote.Secret` so no reference
         outlives the submission. Takes precedence over `totp_secret`/`totp_code`.
     MFA: pass `totp_secret` (Base32) or `totp_code`. Extra kwargs pass through
-    to `entrance.login`.
+    to `entrance.login`. `native=False` keeps every read on Graph (see `_native.py`).
     """
     broker = foci_login(
         username,
@@ -77,4 +78,4 @@ def authenticate(
         mfa=mfa,
         **login_kwargs,
     )
-    return OutNote(broker)
+    return OutNote(broker, native=native)
