@@ -18,7 +18,8 @@ from datetime import timedelta
 from typing import Any
 from urllib.parse import quote, unquote, urlencode
 
-from ._native import message_from_native
+from ._base import GraphError
+from ._native import PRESENCE_SCOPE, message_from_native
 
 log = logging.getLogger("outnote.live")
 
@@ -35,9 +36,10 @@ _MAX_BACKOFF = 60
 @dataclass
 class LiveEvent:
     """One live event. `kind` is `typing`, `stop_typing`, `message`, `message_updated`,
-    `message_deleted`, `connected` (the feed is up; events may have been missed before it, so catch
-    up with `chat_messages` or `stream`), or `other`. `from_me` is True for your own activity. The
-    original event is in `raw`."""
+    `message_deleted`, `presence` (someone you asked to watch: see `sender_id`, `availability` and
+    `activity`), `connected` (the feed is up; events may have been missed before it, so catch up with
+    `chat_messages` or `stream`), or `other`. `from_me` is True for your own activity. The original
+    event is in `raw`."""
 
     kind: str
     chat_id: str | None = None
@@ -46,6 +48,8 @@ class LiveEvent:
     from_me: bool = False
     message: dict | None = None
     raw: Any = None
+    availability: str | None = None
+    activity: str | None = None
 
 
 def parse_frame(frame):
@@ -82,12 +86,32 @@ def event_from(raw, me=None):
     return event
 
 
+def presence_events(body, me=None):
+    """`LiveEvent`s from a Trouter presence delivery, which starts with everyone's current state."""
+    events = []
+    for item in body.get("presence") or []:
+        state = item.get("presence") or {}
+        user = (item.get("mri") or "").removeprefix("8:orgid:") or None
+        events.append(
+            LiveEvent(
+                "presence",
+                sender_id=user,
+                from_me=bool(me and user == me),
+                raw=item,
+                availability=state.get("availability"),
+                activity=state.get("activity"),
+            )
+        )
+    return events
+
+
 class LiveConnection:
     """An iterator of `LiveEvent`s that reconnects by itself, waiting longer after each failure. Stop
     it with `close()`, from another thread if needed, or by leaving the `with` block."""
 
-    def __init__(self, client, reconnect=True):
+    def __init__(self, client, reconnect=True, presence=()):
         self.client, self.reconnect = client, reconnect
+        self.presence = list(presence)
         self._closed = False
         self._ws = None
         self._http = None
@@ -191,6 +215,30 @@ class LiveConnection:
             {**headers, "Content-Type": "application/json"},
             json.dumps(registration).encode(),
         )
+        if self.presence:
+            self._watch_presence(epid, session["surl"])
+
+    def _watch_presence(self, epid, trouter_uri):
+        """Ask Teams to push these people's status here. This only reads: it doesn't publish your
+        own status, so listening doesn't make you look online."""
+        body = {
+            "trouterUri": trouter_uri,
+            "shouldPurgePreviousSubscriptions": True,
+            "subscriptionsToAdd": [{"mri": f"8:orgid:{u}", "source": "ups"} for u in self.presence],
+            "subscriptionsToRemove": [],
+        }
+        service = self.client._chatsvc()["presence"]
+        url = f"{service}/v1/pubsub/subscriptions/{epid}"
+        headers = {  # the service requires these
+            "x-ms-client-user-agent": "Teams-V2-Web",
+            "x-ms-correlation-id": str(uuid.uuid4()),
+            "x-ms-client-version": _VERSION,
+            "x-ms-endpoint-id": epid,
+        }
+        try:
+            self.client.request("POST", url, body, headers=headers, scope=PRESENCE_SCOPE)
+        except GraphError as e:  # messages and typing still work without it
+            log.warning("could not watch presence: %s", e)
 
     def _disconnect(self):
         ws, self._ws = self._ws, None
@@ -258,6 +306,9 @@ class LiveConnection:
         try:
             body = json.loads(delivery.get("body") or "{}")
         except (TypeError, ValueError):
+            return
+        if body.get("presence"):
+            yield from presence_events(body, me)
             return
         items = body.get("eventMessages") or ([body] if body.get("resourceType") else [])
         for raw in items:

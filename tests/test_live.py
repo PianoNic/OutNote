@@ -234,6 +234,75 @@ def test_an_expiring_session_reconnects_with_a_new_one(connected, monkeypatch):
     assert len(sockets) == 2
 
 
+# --- presence ---------------------------------------------------------------------
+def presence_delivery():
+    body = {
+        "isSnapshot": True,
+        "presence": [
+            {
+                "mri": f"8:orgid:{BOB}",
+                "presence": {"availability": "Offline", "activity": "OffWork"},
+            },
+            {"mri": f"8:orgid:{ME}", "presence": {"availability": "Available"}},
+        ],
+    }
+    return "3:::" + json.dumps({"id": 2, "url": "/unifiedPresence", "body": json.dumps(body)})
+
+
+def test_presence_events(connected):
+    live, sockets = connected([[presence_delivery()]])
+    events = take(live, 3)
+    assert [e.kind for e in events] == ["connected", "presence", "presence"]
+    assert (events[1].sender_id, events[1].availability, events[1].activity) == (
+        BOB,
+        "Offline",
+        "OffWork",
+    )
+    assert events[1].from_me is False and events[2].from_me is True
+    assert '"id": 2' in sockets[0].sent[0]  # acknowledged like any delivery
+
+
+def test_watching_presence_subscribes_without_publishing(monkeypatch):
+    c = outnote.OutNote(lambda client_id, scope=None: "t")
+    c._ids["chatsvc"] = {
+        "presence": "https://ups.test",
+        "url": "u",
+        "headers": {},
+        "exp": time.time() + 999,
+    }
+    calls = []
+    monkeypatch.setattr(c, "request", lambda *a, **k: calls.append((a, k)) or {})
+    LiveConnection(c, presence=[BOB])._watch_presence("ep", "https://trouter/f/1/")
+    (method, url, body), kw = calls[0]
+    assert method == "POST" and url == "https://ups.test/v1/pubsub/subscriptions/ep"
+    assert body["trouterUri"] == "https://trouter/f/1/"
+    assert body["subscriptionsToAdd"] == [{"mri": f"8:orgid:{BOB}", "source": "ups"}]
+    assert kw["scope"] == "https://presence.teams.microsoft.com/.default"
+    assert len(calls) == 1  # never touches /me/endpoints, which would publish your own status
+
+
+def test_a_failed_presence_subscription_does_not_stop_the_feed(monkeypatch):
+    c = outnote.OutNote(lambda client_id, scope=None: "t")
+    c._ids["chatsvc"] = {
+        "presence": "https://ups.test",
+        "url": "u",
+        "headers": {},
+        "exp": time.time() + 999,
+    }
+
+    def refused(*a, **k):
+        raise outnote.GraphError(400, "no")
+
+    monkeypatch.setattr(c, "request", refused)
+    LiveConnection(c, presence=[BOB])._watch_presence("ep", "https://t/")  # logs, doesn't raise
+
+
+def test_no_presence_requested_means_no_subscription(monkeypatch):
+    c = outnote.OutNote(lambda client_id, scope=None: "t")
+    assert LiveConnection(c).presence == []
+    assert c.listen.__defaults__ == (True, ())
+
+
 # --- sending typing ---------------------------------------------------------------
 def brokered(monkeypatch):
     c = outnote.OutNote(lambda client_id, scope=None: "tok")

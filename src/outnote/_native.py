@@ -268,8 +268,9 @@ class NativeMixin(Transport):
         message ends it too."""
         self._control(chat_id, "Control/ClearTyping")
 
-    def listen(self, reconnect=True):
-        """A live feed of Teams events: who's typing, new messages, edits and deletions. Iterate it,
+    def listen(self, reconnect=True, presence=()):
+        """A live feed of Teams events: who's typing, new messages, edits and deletions, plus the
+        online status of the user ids in `presence`, starting with their current state. Iterate it,
         ideally in a `with` block, and see `LiveEvent`. It reconnects by itself and yields a
         `connected` event each time; anything sent while it was down is missed, so catch up with
         `chat_messages` or `stream`. Uses Teams' own push service, undocumented, no Graph fallback."""
@@ -277,7 +278,7 @@ class NativeMixin(Transport):
             raise ValueError("this needs the native Teams API: a brokered client")
         from ._live import LiveConnection
 
-        return LiveConnection(self, reconnect)
+        return LiveConnection(self, reconnect, presence)
 
     # --- Outlook ------------------------------------------------------------
     def mail_startup(self, top=25, timezone_name="UTC", conversations=True, focused=True):
