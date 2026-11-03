@@ -243,6 +243,42 @@ class NativeMixin(Transport):
             "POST", f"{s['presence']}/v1/presence/getpresence/", body, scope=PRESENCE_SCOPE
         )
 
+    # --- typing and live events -----------------------------------------------
+    def _control(self, chat_id, kind):
+        if not self.native:
+            raise ValueError("this needs the native Teams API: a brokered client")
+        s = self._chatsvc()
+        body = {"content": "", "messagetype": kind, "contenttype": "Application/Message"}
+        return self.request(
+            "POST",
+            f"{s['url']}/v1/users/ME/conversations/{chat_id}/messages",
+            body,
+            headers=s["headers"],
+            scope=SKYPE_SCOPE,
+        )
+
+    def send_typing(self, chat_id):
+        """Show "typing" to the other people in a chat. The signal fades by itself, so while the user
+        keeps typing, call this again about every 6 seconds, as Teams does. Teams' own API,
+        undocumented, no Graph fallback."""
+        self._control(chat_id, "Control/Typing")
+
+    def clear_typing(self, chat_id):
+        """Stop showing "typing" straight away, for when the user clears what they wrote. Sending a
+        message ends it too."""
+        self._control(chat_id, "Control/ClearTyping")
+
+    def listen(self, reconnect=True):
+        """A live feed of Teams events: who's typing, new messages, edits and deletions. Iterate it,
+        ideally in a `with` block, and see `LiveEvent`. It reconnects by itself and yields a
+        `connected` event each time; anything sent while it was down is missed, so catch up with
+        `chat_messages` or `stream`. Uses Teams' own push service, undocumented, no Graph fallback."""
+        if not self.native:
+            raise ValueError("this needs the native Teams API: a brokered client")
+        from ._live import LiveConnection
+
+        return LiveConnection(self, reconnect)
+
     # --- Outlook ------------------------------------------------------------
     def mail_startup(self, top=25, timezone_name="UTC", conversations=True, focused=True):
         """What Outlook on the web loads at boot, in one request: `findConversation` (the first

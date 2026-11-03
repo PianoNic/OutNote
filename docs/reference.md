@@ -30,6 +30,7 @@ Verified end-to-end against a live locked-down EDU tenant.
 | Extras | `people()`, `reminders(start, end)`, `categories()`, `mail_tips(addresses)`, `recent_files()`, `shared_with_me()` | `/me/people`, `reminderView`, `masterCategories`, `getMailTips`, `/me/drive/recent`, `/me/drive/sharedWithMe` |
 | Mailbox settings | `mailbox_settings()`, `auto_replies()`, `working_hours()`, `mail_rules()` | `/me/mailboxSettings`, `messageRules`, read-only, through the Teams client |
 | Behind an API | `outnote.api`: `ApiCache`, `ClientPool`, `respond`, `error_response` | optional, see [frontend-and-api.md](frontend-and-api.md) |
+| Live Teams | `listen()`, `send_typing(chat_id)`, `clear_typing(chat_id)` | Teams' push service and chat service, undocumented, no Graph fallback |
 | Search | `search_emails`, `search_files`, `search_messages`, `search_people`, `search(q, entity)` | `/search/query` |
 | Robustness | `batch(requests)`, `delta(path, delta_link)` | `/$batch` (20 per call, 4 calls at once, throttled sub-requests retried), `/delta` |
 | Sync | `stream(kind, cursor)`, `SQLiteCache(path, client)` | Graph delta and Teams' sync cursors, see [caching.md](caching.md) |

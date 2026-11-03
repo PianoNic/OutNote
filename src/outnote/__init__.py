@@ -55,6 +55,7 @@ from ._graph import (
     GraphError,
     OutNote,
 )
+from ._live import LiveConnection, LiveEvent
 from ._stream import Change
 from ._text import extract_text, html_to_text, message_text
 
@@ -65,6 +66,8 @@ __all__ = [
     "CursorExpired",
     "Change",
     "SQLiteCache",
+    "LiveConnection",
+    "LiveEvent",
     "TokenError",
     "extract_text",
     "html_to_text",
