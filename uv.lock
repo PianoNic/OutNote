@@ -429,10 +429,11 @@ wheels = [
 
 [[package]]
 name = "outnote"
-version = "2.0.0"
+version = "2.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "ms-entrance" },
+    { name = "wreq" },
 ]
 
 [package.optional-dependencies]
@@ -451,6 +452,7 @@ dev = [
 requires-dist = [
     { name = "ms-entrance", specifier = ">=2.0" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=4" },
+    { name = "wreq", specifier = ">=0.13" },
 ]
 provides-extras = ["pdf"]
 

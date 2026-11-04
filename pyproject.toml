@@ -47,6 +47,7 @@ classifiers = [
 ]
 dependencies = [
     "ms-entrance>=2.0",
+    "wreq>=0.13",
 ]
 
 [project.optional-dependencies]
