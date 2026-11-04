@@ -375,3 +375,23 @@ def test_search_is_unchanged(monkeypatch):
     c = search_client(monkeypatch, ([("1", "x")], True))
     assert [r["id"] for r in c.search("w", "chatMessage", 3)] == ["1"]
     assert c.bodies[0]["size"] == 3
+
+
+# --- chat_members --------------------------------------------------------------
+def test_chat_members_reads_them_through_the_chat(monkeypatch):
+    c = outnote.OutNote("tok")
+    seen = []
+
+    def get(path, params=None, **k):
+        seen.append((path, params))
+        return {"id": "c", "members": [{"userId": "u1"}, {"userId": "u2"}]}
+
+    monkeypatch.setattr(c, "get", get)
+    assert [m["userId"] for m in c.chat_members("c")] == ["u1", "u2"]
+    assert seen == [("chats/c", {"$expand": "members", "$select": "id"})]
+
+
+def test_chat_members_of_a_chat_without_the_field_is_empty(monkeypatch):
+    c = outnote.OutNote("tok")
+    monkeypatch.setattr(c, "get", lambda *a, **k: {"id": "c"})
+    assert c.chat_members("c") == []

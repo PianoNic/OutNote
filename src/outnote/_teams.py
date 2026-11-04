@@ -38,7 +38,10 @@ class TeamsMixin(NativeMixin, DirectoryMixin):
         return self.get(f"chats/{chat_id}", {"$expand": "members,lastMessagePreview"})
 
     def chat_members(self, chat_id):
-        return self.list(f"chats/{chat_id}/members")
+        """The people in a chat, each with `userId` and `displayName`. Reads them through the chat,
+        because Graph can throttle `chats/{id}/members` heavily (see issue #46)."""
+        chat = self.get(f"chats/{chat_id}", {"$expand": "members", "$select": "id"})
+        return chat.get("members") or []
 
     def unread_chats(self, top=50):
         """Chats whose last message is newer than when I last read the chat
