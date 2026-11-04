@@ -11,7 +11,7 @@ Verified end-to-end against a live locked-down EDU tenant.
 | Calendar | `events(start, end)`, `event(id)`, `today()`, `calendars()` | `/me/events`, `/me/calendarView` |
 | Scheduling | `free_busy(users, start, end)`, `find_meeting_times(attendees)` | `getSchedule`, `findMeetingTimes` |
 | Calendar writes | `create_event`, `update_event`, `delete_event`, `respond_event` | `/me/events` |
-| Teams chats | `chats(chat_type=)`, `chat(id)`, `chat_members(id)`, `unread_chats()`, `find_chat(user)`, `chat_messages(id, since=)` | `/me/chats` (members + last message expanded); `unread_chats`, `find_chat` and `chat_messages` use Teams' chat service, falling back to Graph |
+| Teams chats | `chats(chat_type=)`, `chat(id)`, `chat_members(id)`, `unread_chats()`, `find_chat(user)`, `chat_messages(id, since=)`, `chat_message(id, message_id)` | `/me/chats` (members + last message expanded); `unread_chats`, `find_chat` and `chat_messages` use Teams' chat service, falling back to Graph |
 | Teams sending | `send_chat_message(id, text, mentions=)`, `create_chat(users)`, `send_to(user, text)` | `/chats`, `/chats/{id}/messages` |
 | Message lifecycle | `edit_chat_message`, `delete_chat_message`, `undelete_chat_message`, `react`, `unreact`, `mark_chat_read`, `mark_chat_unread` | `PATCH`, `softDelete`, `setReaction`, `markChatReadForUser` |
 | Chat management | `rename_chat`, `add_chat_member`, `remove_chat_member`, `pinned_messages`, `pin_message`, `unpin_message`, `hide_chat`, `unhide_chat` | `/chats/{id}/...` |
@@ -27,6 +27,8 @@ Verified end-to-end against a live locked-down EDU tenant.
 | Planner | `planner_tasks()`, `plans(group_id=)`, `plan_tasks(plan)`, `buckets(plan)`, `planner_task_details(task)` | `/me/planner`, `/planner/plans` |
 | Assignments | `classes()`, `assignments(class_id=)`, `assignment_resources`, `submissions`, `due_assignments(days)` | Teams Assignments API (see [clients.md](clients.md)) |
 | Teams activity | `activity()`, `mentions()`, `call_history()`, `teams_presence(ids)` | Teams' own APIs, undocumented, no Graph equivalent or fallback |
+| Autocomplete | `suggest_recipients(text)` | `/me/people?$search`, your frequent contacts first, then `/users` |
+| Search one chat | `search_chat(chat_id, query, scan=)` | `/search/query`, filtered to that chat |
 | Extras | `people()`, `reminders(start, end)`, `categories()`, `mail_tips(addresses)`, `recent_files()`, `shared_with_me()` | `/me/people`, `reminderView`, `masterCategories`, `getMailTips`, `/me/drive/recent`, `/me/drive/sharedWithMe` |
 | Mailbox settings | `mailbox_settings()`, `auto_replies()`, `working_hours()`, `mail_rules()` | `/me/mailboxSettings`, `messageRules`, read-only, through the Teams client |
 | Behind an API | `outnote.api`: `ApiCache`, `ClientPool`, `respond`, `error_response` | optional, see [frontend-and-api.md](frontend-and-api.md) |

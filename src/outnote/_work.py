@@ -123,21 +123,39 @@ class SearchMixin(Transport):
         'message' (email), 'driveItem' (files), 'chatMessage' (Teams
         chat/channel messages), 'event' (calendar), 'person', 'site',
         'listItem'. (Graph only allows one of these per request.)"""
+        return self._search_page(query, entity, top)[0]
+
+    def _search_page(self, query, entity, size, start=0):
+        """One page of results, and whether Graph has more."""
+        request = {"entityTypes": [entity], "query": {"queryString": query}, "size": size}
+        if start:
+            request["from"] = start
         client = _SEARCH_CLIENT.get(entity, C_OFFICE)
-        body = {
-            "requests": [{"entityTypes": [entity], "query": {"queryString": query}, "size": top}]
-        }
-        data = self.post("search/query", body, client=client) or {}
+        data = self.post("search/query", {"requests": [request]}, client=client) or {}
         containers = (data.get("value") or [{}])[0].get("hitsContainers") or []
-        hits = containers[0].get("hits", []) if containers else []
+        container = containers[0] if containers else {}
         out = []
-        for h in hits:
+        for h in container.get("hits", []):
             r = dict(h.get("resource") or {})
             r["id"] = r.get("id") or h.get("hitId")
             if h.get("summary"):
                 r["_summary"] = h["summary"]
             out.append(r)
-        return out
+        return out, bool(container.get("moreResultsAvailable"))
+
+    def search_chat(self, chat_id, query, top=25, scan=200):
+        """Messages in one chat matching `query`, as Microsoft Search ranks them, with a highlighted
+        `_summary` when it gives one. Graph can't limit a search to one chat, so this looks through up to `scan` results
+        across all your chats and keeps this chat's. A word that's common elsewhere can use up `scan`
+        before reaching them; raise it, or use `chat_messages` and filter for an exact scan."""
+        out, start, page = [], 0, 25
+        while start < scan and len(out) < top:
+            hits, more = self._search_page(query, "chatMessage", page, start)
+            out.extend(h for h in hits if h.get("chatId") == chat_id)
+            if not more or not hits:
+                break
+            start += len(hits)
+        return out[:top]
 
     def search_emails(self, query, top=25):
         return self.search(query, "message", top)

@@ -63,6 +63,30 @@ class DirectoryMixin(Transport):
 
 
 class ProfileMixin(Transport):
+    def suggest_recipients(self, text="", top=5):
+        """Email address suggestions as someone types, people you contact most first. Returns
+        `{"name", "address", "id"}` dicts. With no `text`, your top contacts. Fills up from the
+        directory if your own contacts give too few, which adds about 100 ms."""
+        params = {"$top": top, "$select": "id,displayName,scoredEmailAddresses"}
+        text = text.strip()
+        if text:
+            params["$search"] = '"' + text.replace('"', "") + '"'
+        out, seen = [], set()
+
+        def add(name, address, person_id):
+            key = (address or "").lower()
+            if key and key not in seen and len(out) < top:
+                seen.add(key)
+                out.append({"name": name, "address": address, "id": person_id})
+
+        for p in self.get("me/people", params).get("value", []):
+            scored = p.get("scoredEmailAddresses") or []
+            add(p.get("displayName"), scored[0].get("address") if scored else None, p.get("id"))
+        if text and len(out) < top:
+            for u in self.find_users(text, top):
+                add(u.get("displayName"), u.get("mail") or u.get("userPrincipalName"), u.get("id"))
+        return out
+
     def people(self, top=25):
         """People you work with most, ranked by Microsoft (`me/people`)."""
         params = {"$top": top, "$select": "id,displayName,jobTitle,department,scoredEmailAddresses"}

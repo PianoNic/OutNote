@@ -38,7 +38,10 @@ class TeamsMixin(NativeMixin, DirectoryMixin):
         return self.get(f"chats/{chat_id}", {"$expand": "members,lastMessagePreview"})
 
     def chat_members(self, chat_id):
-        return self.list(f"chats/{chat_id}/members")
+        """The people in a chat, each with `userId` and `displayName`. Reads them through the chat,
+        because Graph can throttle `chats/{id}/members` heavily (see issue #46)."""
+        chat = self.get(f"chats/{chat_id}", {"$expand": "members", "$select": "id"})
+        return chat.get("members") or []
 
     def unread_chats(self, top=50):
         """Chats whose last message is newer than when I last read the chat
@@ -77,6 +80,14 @@ class TeamsMixin(NativeMixin, DirectoryMixin):
             params["$filter"] = f"lastModifiedDateTime gt {_iso(since)}"
             params["$orderby"] = "lastModifiedDateTime desc"
         return self.list(f"me/chats/{chat_id}/messages", params, limit=top)
+
+    def chat_message(self, chat_id, message_id):
+        """One message of a chat, with its attachments (see `message_files`). Uses Teams' own API,
+        because Graph can throttle single-message reads heavily, and falls back to Graph."""
+        fast = self._native_message(chat_id, message_id)
+        if fast is not None:
+            return fast
+        return self.get(f"chats/{chat_id}/messages/{message_id}")
 
     # --- sending (posts as the signed-in user) ------------------------------
     def _mention_body(self, text, html, mentions):
