@@ -619,8 +619,8 @@ Register it from your page with `navigator.serviceWorker.register("/sw.js")`.
   computer could read the previous user's mail. IndexedDB isn't encrypted.
 - **Respect `Retry-After`.** If `error.retryAfter` is set, wait that long before trying again.
 - **Don't poll too often.** `keepFresh` stops while the tab is hidden, and 30 seconds is a fair start.
-- **There's no push here.** Teams and Outlook get updates over their own push connections, so this approach
-  has a delay up to your polling interval.
+- **There's no push here.** This approach has a delay up to your polling interval. For Teams,
+  [`note.listen()`](live.md) can deliver events live, if your API forwards them to the browser.
 
 ## Choosing the times
 

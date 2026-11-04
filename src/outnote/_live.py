@@ -4,7 +4,7 @@ change without notice. Nothing here runs unless you call `listen()`, and it keep
     with note.listen() as live:
         for event in live:
             if event.kind == "typing":
-                print(event.sender_name, "is typing in", event.chat_id)
+                print(event.sender_id, "is typing in", event.chat_id)
             elif event.kind == "message":
                 print(event.sender_name, event.message["body"]["content"])
 """

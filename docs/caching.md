@@ -111,7 +111,7 @@ A large first sync can take a while: about 40 seconds for 14,000 OneDrive files 
 
 ## Keeping it fresh
 
-There's no push yet, so poll. A sync that finds nothing is cheap, so a short loop is fine:
+For Teams, [`note.listen()`](live.md) pushes events live. Everything else needs polling. A sync that finds nothing is cheap, so a short loop is fine:
 
 ```python
 while True:
