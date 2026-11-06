@@ -105,9 +105,17 @@ def presence_events(body, me=None):
     return events
 
 
+class _Renewal(Exception):
+    """The session token is about to expire: a planned reconnect, not a failure."""
+
+
 class LiveConnection:
     """An iterator of `LiveEvent`s that reconnects by itself, waiting longer after each failure. Stop
-    it with `close()`, from another thread if needed, or by leaving the `with` block."""
+    it with `close()`, from another thread if needed, or by leaving the `with` block.
+
+    The Teams session lasts about 75 minutes. Shortly before it expires, the feed signs in again and
+    reconnects straight away, even with `reconnect=False`, and yields `connected` again. Events sent
+    during that short gap are missed, so catch up on `connected` as usual."""
 
     def __init__(self, client, reconnect=True, presence=()):
         self.client, self.reconnect = client, reconnect
@@ -135,6 +143,10 @@ class LiveConnection:
                     yield LiveEvent("connected")
                     failures = 0
                     yield from self._frames()
+                except _Renewal:
+                    log.info("live session renewed")
+                    self._disconnect()
+                    continue
                 except Exception as e:  # noqa: BLE001 - network, auth or protocol: all mean reconnect
                     if not self.reconnect:
                         raise
@@ -270,7 +282,7 @@ class LiveConnection:
         while not self._closed:
             if time.time() > expires - 120:
                 self.client._ids.pop("chatsvc", None)  # so the reconnect signs in again
-                raise OSError("session token is about to expire")
+                raise _Renewal()
             if time.monotonic() - beat > _HEARTBEAT:
                 self._send("2:::")
                 beat = time.monotonic()

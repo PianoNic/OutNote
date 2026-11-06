@@ -190,6 +190,19 @@ def test_failing_connections_back_off_and_stop_on_close(connected, monkeypatch):
     assert waits[:3] == [2, 4, 8] and max(waits) == _live._MAX_BACKOFF
 
 
+def test_a_session_renewal_continues_even_without_reconnect(connected, monkeypatch):
+    live, sockets = connected([[], [delivery(raw())]], reconnect=False)
+    client = live.client
+    client._ids["chatsvc"]["exp"] = time.time() + 90  # inside the 120 s renewal margin
+    monkeypatch.setattr(client, "request", lambda *a, **k: AUTHZ)
+    waits = []
+    monkeypatch.setattr(live, "_sleep", waits.append)
+    events = take(live, 3)
+    assert [e.kind for e in events] == ["connected", "connected", "message"]
+    assert waits == []  # a planned renewal doesn't back off
+    assert sockets[0].closed and len(sockets) == 2
+
+
 def test_reconnect_can_be_turned_off(connected):
     live, _ = connected([[OSError("dropped")]], reconnect=False)
     with pytest.raises(OSError):

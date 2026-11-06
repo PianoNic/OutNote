@@ -49,8 +49,9 @@ Things to know, from testing:
 - **`presence` starts with everyone's current state.** Listening doesn't publish your own status, so it
   doesn't make you look online. Status changes were only seen live for the signed-in user, and someone
   who was active in a chat stayed reported as `Offline`, so treat status as a hint.
-- **Tokens renew by themselves.** The feed reconnects shortly before its session token expires, which can
-  leave a short gap. Catch up on `connected`.
+- **Sessions renew by themselves.** The Teams session lasts about 75 minutes. Shortly before it expires,
+  the feed signs in again and reconnects straight away, even with `reconnect=False`, and yields
+  `connected`. Events in that short gap are missed, so catch up on `connected`.
 
 ## Showing that you're typing
 
